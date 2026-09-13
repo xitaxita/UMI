@@ -1,0 +1,16 @@
+action4_h264_capture_node:
+  ros__parameters:
+    video_device: /dev/video0
+    image_width: 1920
+    image_height: 1080
+    framerate: 30
+    io_mode: mmap
+    frame_id: action4_camera
+    preview_topic: /action4/image_preview
+    preview_width: 640
+    preview_height: 360
+    output_path: ""
+    preview_fps: 15.0
+    bitrate_kbps: 12000
+    warmup_seconds: 5.0
+    startup_timeout_seconds: 30.0

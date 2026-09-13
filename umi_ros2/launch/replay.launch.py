@@ -1,0 +1,58 @@
+"""Replay one UMI session or one recording in RViz."""
+
+from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    RegisterEventHandler,
+)
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
+from launch.substitutions import LaunchConfiguration
+
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+from umi_ros2.launch_support import asset_paths, rviz_node
+
+
+def generate_launch_description():
+    """Auto-detect a session/recording and replay MP4 plus pose in RViz."""
+    paths = asset_paths()
+    input_path = LaunchConfiguration('input_path')
+    playback_rate = LaunchConfiguration('playback_rate')
+    replay = Node(
+        package='umi_ros2', executable='session_replay_node',
+        name='umi_session_replay_node', output='screen',
+        parameters=[{
+            'input_path': input_path,
+            'playback_rate': ParameterValue(
+                playback_rate, value_type=float),
+        }],
+    )
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'input_path',
+            description=(
+                'Path to a UMI session or calibration/episode directory'),
+        ),
+        DeclareLaunchArgument(
+            'playback_rate', default_value='1.0',
+            description='Rosbag playback speed multiplier',
+        ),
+        RegisterEventHandler(OnProcessExit(
+            target_action=replay,
+            on_exit=[EmitEvent(event=Shutdown(
+                reason='Session/recording playback finished'
+            ))],
+        )),
+        Node(
+            package='umi_ros2', executable='replay_path_node',
+            name='vive_replay_path_node', output='screen',
+            parameters=[{'use_sim_time': True}],
+        ),
+        rviz_node(
+            paths['online_rviz'], 'umi_replay_rviz', use_sim_time=True
+        ),
+        replay,
+    ])

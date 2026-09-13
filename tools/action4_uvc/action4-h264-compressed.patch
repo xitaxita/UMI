@@ -1,0 +1,14 @@
+diff --git a/drivers/media/usb/uvc/uvc_driver.c b/drivers/media/usb/uvc/uvc_driver.c
+--- a/drivers/media/usb/uvc/uvc_driver.c
++++ b/drivers/media/usb/uvc/uvc_driver.c
+@@ -416,2 +416,10 @@
+ 			if (buffer[27])
+ 				format->flags = UVC_FMT_FLAG_COMPRESSED;
++			/* Action 4 advertises H.264 with bVariableSize = 0.
++			 * Treat this compressed format as compressed, otherwise
++			 * bpp = 0 produces a zero-sized capture buffer.
++			 */
++			if (le16_to_cpu(dev->udev->descriptor.idVendor) == 0x2ca3 &&
++			    le16_to_cpu(dev->udev->descriptor.idProduct) == 0x0023 &&
++			    format->fcc == V4L2_PIX_FMT_H264)
++				format->flags |= UVC_FMT_FLAG_COMPRESSED;

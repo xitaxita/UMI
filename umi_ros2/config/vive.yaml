@@ -1,0 +1,13 @@
+vive_pose_node:
+  ros__parameters:
+    device_name: ""
+    device_serial: ""
+    device_index: -1
+    libsurvive_args: ""
+    world_frame: vive_world
+    child_frame: vive_tracker
+    pose_topic: vive/pose
+    path_topic: vive/path
+    max_path_points: 10000
+    publish_hz: 90.0
+    publish_tf: true
