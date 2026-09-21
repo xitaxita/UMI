@@ -10,7 +10,145 @@ RViz2 中显示相机预览、Tracker 位姿和运动路径。
 - 离线采集：Action 4 将 4K/60 fps 视频保存到 microSD，电脑只记录 pose，
   采集结束后再把视频复制到对应目录。
 
-## 1. 开始之前
+## 1. 已验证的运行环境
+
+当前项目在以下环境中开发和验证：
+
+- Ubuntu 24.04 LTS（当前机器为 24.04.5）。
+- ROS 2 Jazzy Desktop。
+- Python 3.12。
+- Python 虚拟环境：`~/umi_ros_venv`，创建时启用系统 Python 包。
+- `colcon-common-extensions==0.3.0`。
+- `setuptools==68.1.2`。不要直接升级到新版；当前 ROS 2 Python 构建链与
+  `setuptools==84.0.0` 不兼容。
+- `pysurvive==1.1.204`，底层使用 libsurvive，不使用 OpenVR/SteamVR。
+- GStreamer 1.24、OpenCV 4.6、FFmpeg 6.1 和 rosbag2 MCAP。
+
+其他 ROS 2 发行版、Ubuntu 版本或 Python 主版本尚未经过本项目验证。
+
+## 2. 安装系统依赖
+
+先按照 ROS 2 官方方式安装 ROS 2 Jazzy Desktop，然后安装项目运行与检查工具：
+
+```bash
+sudo apt update
+sudo apt install \
+  ros-jazzy-desktop \
+  ros-jazzy-rosbag2 \
+  ros-jazzy-rosbag2-storage-mcap \
+  python3-venv \
+  python3-rosdep \
+  python3-gi \
+  python3-opencv \
+  python3-h5py \
+  python3-matplotlib \
+  python3-yaml \
+  gir1.2-gstreamer-1.0 \
+  gstreamer1.0-tools \
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad \
+  gstreamer1.0-plugins-ugly \
+  gstreamer1.0-libav \
+  ffmpeg \
+  v4l-utils
+```
+
+如果尚未初始化 rosdep：
+
+```bash
+sudo rosdep init
+rosdep update
+```
+
+`sudo rosdep init` 在一台电脑上通常只需执行一次；如果提示已经初始化，可跳过。
+
+## 3. 创建 Python 虚拟环境
+
+本项目必须让 venv 访问 ROS 2 和 GStreamer 安装到系统 Python 中的包，因此
+必须带 `--system-site-packages`：
+
+```bash
+python3 -m venv --system-site-packages ~/umi_ros_venv
+source /opt/ros/jazzy/setup.bash
+source ~/umi_ros_venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install \
+  setuptools==68.1.2 \
+  colcon-common-extensions==0.3.0 \
+  PyYAML==6.0.1 \
+  h5py==3.16.0 \
+  pysurvive==1.1.204
+```
+
+确认当前终端确实使用 venv：
+
+```bash
+which python
+which colcon
+python --version
+python -c "import rclpy, gi, cv2, pysurvive; print('environment OK')"
+```
+
+前两个路径都应位于 `~/umi_ros_venv/bin/`，Python 应为 3.12。以后始终先
+source ROS 2，再激活 venv；顺序不要颠倒。
+
+### LeRobot v3 独立环境
+
+LeRobot 的 NumPy、setuptools 和深度学习依赖与当前 ROS 2 Jazzy 环境不同，
+不要把 LeRobot 安装进 `~/umi_ros_venv`。需要导出 LeRobot v3 时，另建一个
+Python 3.12 环境：
+
+```bash
+/usr/bin/python3 -m venv ~/umi_lerobot_venv312
+source ~/umi_lerobot_venv312/bin/activate
+python -m pip install --upgrade pip
+python -m pip install \
+  torch==2.10.0 torchvision==0.25.0 \
+  --index-url https://download.pytorch.org/whl/cpu
+python -m pip install --no-cache-dir lerobot==0.4.4
+```
+
+本项目调用该环境中的解释器完成最后的 LeRobot 序列化；标定、MCAP 读取、
+对齐和坐标变换仍在 ROS 环境中运行。这样不会破坏 `rclpy`、NumPy 1.x 或
+ROS 的构建工具链。
+
+## 4. 安装项目依赖并构建
+
+```bash
+cd ~/Documents/UMI
+source /opt/ros/jazzy/setup.bash
+source ~/umi_ros_venv/bin/activate
+rosdep install --from-paths umi_ros2 --ignore-src -r -y
+python -m colcon build --packages-select umi_ros2 --symlink-install
+source install/setup.bash
+```
+
+构建后可以检查安装是否成功：
+
+```bash
+ros2 pkg executables umi_ros2
+ros2 launch umi_ros2 online_record.launch.py --show-args
+```
+
+每次修改 Python 或 launch/config 文件后，建议重新执行 build 和
+`source install/setup.bash`。`--symlink-install` 会让 Python 源码修改更方便，
+但新文件、入口点和安装资源仍需要重新构建。
+
+## 5. 每个新终端的环境准备
+
+每次打开终端都执行：
+
+```bash
+cd ~/Documents/UMI
+source /opt/ros/jazzy/setup.bash
+source ~/umi_ros_venv/bin/activate
+source install/setup.bash
+```
+
+推荐把上面四行保存为自己的 shell alias，但不要直接修改 `install/` 中自动
+生成的 setup 文件；重新构建时这些文件可能被覆盖。
+
+## 6. 硬件与权限准备
 
 确认以下事项：
 
@@ -19,31 +157,29 @@ RViz2 中显示相机预览、Tracker 位姿和运动路径。
 3. Action 4 的电子防抖已经关闭。
 4. 两个 Vive 基站已开启、固定牢靠并且没有明显遮挡。
 5. SteamVR 已关闭，避免占用 Vive USB 设备。
-6. 电脑上已经准备好 ROS 2 Jazzy、`~/umi_ros_venv`、pysurvive、RViz2、
-   rosbag2、GStreamer 和 ffmpeg。
-
-## 2. 构建和准备终端
-
-首次构建或代码更新后运行：
+6. libsurvive 的 USB/udev 规则已经安装，当前用户能够访问 Tracker、接收器和
+   基站设备；修改规则后需要重新插拔设备，必要时重新登录。
+7. 在线模式下，当前用户能够读取相机对应的 `/dev/video*`；可用下面的命令
+   检查设备和格式：
 
 ```bash
-cd ~/Documents/UMI
-source /opt/ros/jazzy/setup.bash
-source ~/umi_ros_venv/bin/activate
-python -m colcon build --packages-select umi_ros2 --symlink-install
-source install/setup.bash
+v4l2-ctl --list-devices
+v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
-每次打开新终端时运行：
+当前 Action 4 已验证的 Webcam 输入是 MJPEG 1920×1080/30 fps；系统将其编码
+为 H.264 MP4。相机若不是 `/dev/video0`，需要修改
+`umi_ros2/config/action4.yaml`。
+
+可以用以下命令做一次环境级自检：
 
 ```bash
-cd ~/Documents/UMI
-source /opt/ros/jazzy/setup.bash
-source ~/umi_ros_venv/bin/activate
-source install/setup.bash
+gst-inspect-1.0 v4l2src jpegdec x264enc h264parse mp4mux
+ffmpeg -version
+ros2 bag --help
 ```
 
-## 3. 检查 Vive Tracker
+## 7. 检查 Vive Tracker
 
 Vive 配置文件位于 `umi_ros2/config/vive.yaml`。如果只有一个 Tracker，可以
 保留默认自动选择。正式长期采集时，建议填写稳定的 `device_name` 或
@@ -72,7 +208,7 @@ libsurvive_args: "--force-calibrate"
 
 重新标定完成后，应将它恢复为空字符串。
 
-## 4. 在线采集前准备
+## 8. 在线采集前准备
 
 1. 用 USB 将 Action 4 连接电脑。
 2. 在相机上选择 Webcam 模式。
@@ -86,7 +222,7 @@ v4l2-ctl --list-devices
    `umi_ros2/config/action4.yaml` 中的 `video_device`。
 5. 在线采集期间不要让 Action 4 同时向 microSD 录像。
 
-## 5. 启动在线采集
+## 9. 启动在线采集
 
 在第一个终端运行：
 
@@ -94,8 +230,9 @@ v4l2-ctl --list-devices
 ros2 launch umi_ros2 online_record.launch.py
 ```
 
-系统会启动 Action 4、Vive 和 RViz2。相机在本次启动中只预热一次，默认约
-5 秒。等待 RViz2 中同时出现相机画面、Tracker 和路径后再开始采集。
+系统会启动 Action 4、Vive、常驻 pose recorder 和 RViz2。相机与 pose
+recorder 在本次启动中同时预热一次，默认至少 5 秒。等待 RViz2 中同时出现
+相机画面、Tracker 和路径后再开始采集。
 
 在第二个准备好的终端运行：
 
@@ -114,10 +251,12 @@ ros2 run umi_ros2 episode_keyboard
 
 每次结束 episode 后，等待终端显示 `episode complete`，再开始下一条。
 
-等待状态下，图像只用于 RViz2 预览，不保存视频和 pose；录制状态下，视频和
-pose 会同时保存。切换 episode 不会重启或重新预热相机。
+等待状态下，图像只用于 RViz2 预览，pose recorder 维持订阅但不保存；录制
+状态下，每条记录仍写入自己目录内独立的 `video.mp4` 和 `pose/`。开始时先
+确认新 pose bag 已写入第一条 pose，再开始写视频。切换 episode 不会重启或
+重新预热相机和 pose recorder。
 
-## 6. 生成时间标定图案
+## 10. 生成时间标定图案
 
 第一次使用前生成 ArUco 标记：
 
@@ -129,7 +268,7 @@ ros2 run umi_ros2 generate_aruco_marker \
 打印时保持正方形，建议黑色标记区域约为 60 mm × 60 mm，并在周围保留
 白边。打印后可以长期重复使用。
 
-## 7. 录制时间标定 episode
+## 11. 录制时间标定 episode
 
 每次重新启动在线采集系统后，先录制一条专用时间标定 episode。同一次
 Launch 持续运行期间，普通 episode 不需要重复标定。
@@ -149,7 +288,7 @@ Launch 持续运行期间，普通 episode 不需要重复标定。
 
 移动时应有明显转折，但不要快到画面严重模糊。
 
-## 8. 计算并检查时间差
+## 12. 计算并检查时间差
 
 在第三个准备好的终端运行：
 
@@ -176,7 +315,7 @@ alignment_report.png
 记录及其结果，等待后续统一对齐工具使用。标定程序也会把结果路径和状态写入
 本次 session 的 `session.yaml`。
 
-## 9. 录制普通在线 episode
+## 13. 录制普通在线 episode
 
 时间标定通过后，可以重复采集普通任务：
 
@@ -210,7 +349,7 @@ recordings/online_session_<时间>/
     └── episode_0002/
 ```
 
-## 10. 结束在线采集
+## 14. 结束在线采集
 
 推荐先结束当前 episode 并等待 `episode complete`，然后在 Launch 终端按
 `Ctrl+C`。等待所有进程退出后再关闭终端、拔出相机或关闭电源。
@@ -223,7 +362,112 @@ recordings/online_session_<时间>/
 4. `session.yaml` 已登记各条记录，标定目录包含 `time_offset.json` 和
    `alignment_report.png`。
 
-## 11. 离线采集
+## 15. 对齐在线 session
+
+完成采集并获得通过验收的 `time_offset.json` 后，运行普通 Python 对齐工具：
+
+```bash
+python -m umi_ros2.postprocess.align_session \
+  recordings/online_session_<时间>
+```
+
+它会处理 session 中所有普通 episode，不处理 calibration，并默认写入：
+
+```text
+processed/online_session_<时间>/
+├── alignment_summary.json
+└── episodes/
+    └── episode_0001/
+        ├── aligned_frames.npz
+        ├── aligned_frames.csv
+        └── alignment.json
+```
+
+工具以 MP4 的真实帧时间为主轴，应用已接受的时间差，对位置进行线性插值、
+对姿态进行四元数 SLERP。超出 pose 覆盖范围或相邻 pose 间隔超过 0.1 秒的帧
+会标为 invalid，不会外推。默认要求至少 95% 的视频帧有效。
+
+`--offset-seconds` 只用于诊断尚未标定的数据。正式数据应读取 session 中
+`accepted` 的标定结果。输出位于独立目录，不会修改 raw session。
+
+## 16. 生成 episode 相对坐标、HDF5 或 LeRobot v3 数据集
+
+正式处理已经通过验收时间差的在线 session 时，直接运行完整流程：
+
+```bash
+ros2 run umi_ros2 process_session \
+  recordings/online_session_<时间> \
+  --task "任务描述" \
+  --format hdf5
+```
+
+如果 `session.yaml` 还没有 accepted 标定结果，可以加
+`--run-calibration`，程序会先处理编号最小的 calibration；标定不通过时流程
+会停止，不会继续生成正式数据。`--offset-seconds` 仅供诊断，不能代替正式标定。
+
+默认输出结构：
+
+```text
+processed/online_session_<时间>/
+├── aligned/                       # 世界坐标下逐视频帧 pose
+│   ├── alignment_summary.json
+│   └── episodes/episode_0001/
+├── transformed/                   # episode 起点坐标下逐帧 pose
+│   ├── transform_summary.json
+│   └── episodes/episode_0001/
+│       ├── episode_frames.npz
+│       ├── episode_frames.csv
+│       └── transform.json
+├── dataset.hdf5                   # 选择 hdf5/both 时生成
+└── lerobot/                       # 选择 lerobot/both 时生成
+    ├── meta/                      # LeRobot v3 元数据与 episode 索引
+    ├── data/                      # Parquet 状态、时间戳和索引
+    ├── videos/                    # 按 episode 保存的视频
+    └── umi_export.json            # 本项目补充的导出说明
+```
+
+每条 episode 的第一条有效视频帧 pose 被定义为原点。后续位置和姿态都表示为
+相对于该原点的变换。无效帧不会被补值，默认不写入最终 HDF5。HDF5 中每个
+episode 包含逐帧 JPEG 图像、`[x,y,z,qx,qy,qz,qw]` pose、原视频帧号、视频
+PTS 和 pose 查询时间。可以用 `--jpeg-quality` 调整图像压缩质量。
+
+同时生成 HDF5 和 LeRobot v3：
+
+```bash
+ros2 run umi_ros2 process_session \
+  recordings/online_session_<时间> \
+  --task "任务描述" \
+  --format both \
+  --repo-id local/umi_demo
+```
+
+只生成 LeRobot 时使用 `--format lerobot`。默认会调用
+`~/umi_lerobot_venv312/bin/python`；环境在其他位置时增加
+`--lerobot-python /实际路径/bin/python`。LeRobot 输出使用官方 v3 API，图像
+保存为视频，状态为 episode 起点坐标系下的
+`[x,y,z,qx,qy,qz,qw]`。同时保留源视频帧号、真实视频 PTS 和 pose 查询时间。
+LeRobot 自身的 `timestamp` 是按导出帧序号和 `--fps` 生成的固定频率时间轴。
+
+当前没有可靠的机器人 action/夹爪控制量，因此导出器不会伪造 `action` 字段；
+后续确定 action 语义后再独立扩展 schema。
+
+需要单独调试某个阶段时，可分别运行：
+
+```bash
+ros2 run umi_ros2 align_session <raw_session> --output <aligned_dir>
+ros2 run umi_ros2 transform_session <aligned_dir> --output <transformed_dir>
+ros2 run umi_ros2 export_hdf5 <transformed_dir> --output <dataset.hdf5>
+PYTHONPATH=~/Documents/UMI/umi_ros2 \
+  ~/umi_lerobot_venv312/bin/python -m umi_ros2.postprocess.export_lerobot \
+  <transformed_dir> --output <lerobot_dir> \
+  --repo-id local/umi_demo --task "任务描述"
+```
+
+三个阶段通过磁盘文件契约连接，不会相互调用内部算法。修改时间标定、插值、
+坐标变换或导出格式时，可以只替换对应阶段。HDF5 与原生 LeRobot v3 exporter
+都读取同一份 `transformed/` 契约，互不依赖。
+
+## 17. 离线采集
 
 离线模式下，Action 4 不连接 USB。相机把视频保存到 microSD，电脑只记录
 Vive pose 并在 RViz2 中显示路径。
@@ -256,7 +500,7 @@ ros2 launch umi_ros2 offline_record.launch.py \
 
 不要使用已经包含数据的目录。
 
-## 12. 导入离线视频
+## 18. 导入离线视频
 
 从 microSD 找到与该次 pose 对应的视频，复制到离线会话根目录并命名为
 `video.mp4`：
@@ -281,7 +525,7 @@ recordings/offline_session_<时间>/
 确认复制完整且视频可以播放之前，不要删除 microSD 中的原文件。如果相机把
 一次录像拆分成多个文件，应保留全部原始分段。
 
-## 13. 检查 pose 记录
+## 19. 检查 pose 记录
 
 在线和离线 pose 都可以使用下面的命令检查：
 
@@ -299,7 +543,7 @@ ros2 bag info recordings/<会话目录>/pose
 
 `/vive/path` 只用于 RViz2 显示，不会保存到数据中。
 
-## 14. 回放 session 或单条数据
+## 20. 回放 session 或单条数据
 
 回放整个在线 session：
 
@@ -328,11 +572,23 @@ ros2 launch umi_ros2 replay.launch.py \
   input_path:=recordings/online_session_<时间> playback_rate:=2.0
 ```
 
+回放预览默认是 1280×720。若电脑性能足够，可以改为原视频的 1920×1080：
+
+```bash
+ros2 launch umi_ros2 replay.launch.py \
+  input_path:=recordings/online_session_<时间> \
+  preview_width:=1920 preview_height:=1080
+```
+
+如果 RViz 播放卡顿，可改用 `preview_width:=640 preview_height:=360`。
+预览分辨率只影响回放显示，不会修改 MP4 或实时采集设置。回放默认按视频原有
+约 30 fps 展示；不能通过调高预览参数生成原视频没有的帧。
+
 回放会直接读取每条数据的 `video.mp4`，同时播放对应的 `pose/`，在 RViz2
 显示图像、Vive 路径和 TF。切换到下一条数据前会清空上一条路径。当前回放
 保留原始视频与 pose 的记录起点关系，但不会自动应用 `time_offset.json`。
 
-## 15. 只观察，不录制
+## 21. 只观察，不录制
 
 只检查在线相机和 Vive 显示：
 
@@ -346,7 +602,7 @@ ros2 launch umi_ros2 online_view.launch.py
 ros2 launch umi_ros2 vive.launch.py
 ```
 
-## 16. 常见问题
+## 22. 常见问题
 
 ### 没有相机画面
 
@@ -376,12 +632,15 @@ ros2 launch umi_ros2 vive.launch.py
 4. 确认标定 episode 同时包含视频和 pose。
 5. 重新录制标定 episode，不要手工修改失败结果。
 
-## 17. 当前限制
+## 23. 当前限制
 
 - 在线连续 episode 和时间标定仍需 Action 4 真机验收。
-- 时间差已经可以计算和保存，但尚未自动应用到普通 episode。
+- 正式后处理会自动读取 accepted 时间差并应用到普通 episode；回放显示仍不
+  应用该时间差。
 - 离线 SD 视频尚不能自动导入或自动完成时间标定。
-- 相机内参、相机到 Tracker 的刚性外参和 LeRobot 转换尚未完成。
+- 相机内参和相机到 Tracker 的刚性外参尚未完成。
 - 回放尚未自动应用标定得到的 `time_offset.json`。
+- HDF5 和 LeRobot v3 导出已经实现并完成软件级真实数据诊断，但尚未使用
+  accepted 时间差的数据完成训练侧验收；LeRobot 中暂时没有 `action` 字段。
 
 项目当前进度见 [project.md](project.md)。

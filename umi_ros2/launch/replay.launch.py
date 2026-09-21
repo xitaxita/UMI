@@ -21,6 +21,8 @@ def generate_launch_description():
     paths = asset_paths()
     input_path = LaunchConfiguration('input_path')
     playback_rate = LaunchConfiguration('playback_rate')
+    preview_width = LaunchConfiguration('preview_width')
+    preview_height = LaunchConfiguration('preview_height')
     replay = Node(
         package='umi_ros2', executable='session_replay_node',
         name='umi_session_replay_node', output='screen',
@@ -28,6 +30,10 @@ def generate_launch_description():
             'input_path': input_path,
             'playback_rate': ParameterValue(
                 playback_rate, value_type=float),
+            'preview_width': ParameterValue(
+                preview_width, value_type=int),
+            'preview_height': ParameterValue(
+                preview_height, value_type=int),
         }],
     )
     return LaunchDescription([
@@ -39,6 +45,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'playback_rate', default_value='1.0',
             description='Rosbag playback speed multiplier',
+        ),
+        DeclareLaunchArgument(
+            'preview_width', default_value='1280',
+            description='RViz replay preview width in pixels',
+        ),
+        DeclareLaunchArgument(
+            'preview_height', default_value='720',
+            description='RViz replay preview height in pixels',
         ),
         RegisterEventHandler(OnProcessExit(
             target_action=replay,

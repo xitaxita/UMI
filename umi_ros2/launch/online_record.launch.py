@@ -54,7 +54,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'warmup_seconds',
             default_value='5.0',
-            description='Minimum camera streaming warmup before MP4 recording',
+            description='Minimum camera and pose warmup before recording',
         ),
         RegisterEventHandler(OnProcessExit(
             target_action=vive,

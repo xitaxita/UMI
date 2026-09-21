@@ -70,6 +70,10 @@ class H264CaptureNode(Node):
             (self._session_dir or self._recordings_root)
             / '.online_camera_status.json'
         )
+        self._pose_status_path = (
+            self._session_dir / '.online_pose_status.json'
+            if self._session_dir is not None else None
+        )
         self._base_config = {
             'device': str(self.get_parameter('video_device').value),
             'width': int(self.get_parameter('image_width').value),
@@ -103,6 +107,8 @@ class H264CaptureNode(Node):
             self._publish_latest_preview,
         )
         self._health_timer = self.create_timer(0.2, self._check_process)
+        if self._episode_mode:
+            self._start_pose_worker()
         self._start_worker('')
         if self._episode_mode:
             self._start_service = self.create_service(
@@ -141,6 +147,25 @@ class H264CaptureNode(Node):
             'before entering waiting state'
         )
 
+    def _start_pose_worker(self):
+        """Start one pose subscriber retained for the complete session."""
+        self._pose_status_path.unlink(missing_ok=True)
+        config = {
+            'warmup_seconds': self._base_config['warmup_seconds'],
+            'startup_timeout_seconds': (
+                self._base_config['startup_timeout_seconds']),
+            'status_path': str(self._pose_status_path),
+        }
+        self._pose_process = subprocess.Popen(
+            [sys.executable, '-m',
+             'umi_ros2.vive.pose_recording_worker', json.dumps(config)],
+            stdin=subprocess.PIPE,
+            start_new_session=True,
+        )
+        self.get_logger().info(
+            'Persistent pose recorder launched; warming subscriptions with '
+            'the camera')
+
     def _stop_worker(self):
         """Stop the persistent worker when the complete ROS session exits."""
         if self._process is None:
@@ -156,6 +181,20 @@ class H264CaptureNode(Node):
                 process.wait(timeout=5)
         self._reader.join(timeout=2)
         process.stdout.close()
+
+    def _stop_pose_worker(self):
+        """Stop the persistent pose subscriber when the session exits."""
+        if self._pose_process is None:
+            return
+        process = self._pose_process
+        self._pose_process = None
+        if process.poll() is None:
+            process.send_signal(signal.SIGINT)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=5)
 
     def _new_recording_dir(self, kind):
         """Return the next sequential ordinary or calibration directory."""
@@ -186,19 +225,23 @@ class H264CaptureNode(Node):
             response.success = False
             response.message = 'camera has not completed its one-time warmup'
             return response
+        if not self._wait_pose_state('waiting', 30):
+            response.success = False
+            response.message = (
+                'pose recorder has not completed its one-time warmup')
+            return response
         episode = self._new_recording_dir(kind)
         pose = episode / 'pose'
         episode.mkdir(parents=True, exist_ok=False)
-        self._pose_process = subprocess.Popen([
-            'ros2', 'bag', 'record', '--storage', 'mcap',
-            '--output', str(pose),
-            '--disable-keyboard-controls', '--topics',
-            '/vive/pose', '/tf', '/tf_static',
-        ])
         self._episode_dir = episode
         self._recording_kind = kind
         self._output_path = self._prepare_output(episode / 'video.mp4')
         try:
+            self._send_pose_worker({
+                'command': 'start', 'output_path': str(pose)})
+            if not self._wait_pose_state('recording_ready', 5):
+                raise RuntimeError(
+                    'pose recorder did not write its first pose in time')
             self._send_worker({
                 'command': 'start', 'output_path': self._output_path,
                 'timing_path': str(
@@ -207,7 +250,7 @@ class H264CaptureNode(Node):
             if not self._wait_worker_state('recording', 5):
                 raise RuntimeError('camera did not enter recording state')
         except Exception:
-            self._stop_pose()
+            self._stop_pose_recording()
             register_recording(
                 self._session_dir, episode, kind, status='failed')
             self._episode_dir = None
@@ -219,14 +262,19 @@ class H264CaptureNode(Node):
         self.get_logger().info(response.message)
         return response
 
-    def _stop_pose(self):
-        """Stop and flush an active rosbag process."""
-        if self._pose_process is None:
+    def _send_pose_worker(self, command):
+        """Send one recording command to the persistent pose worker."""
+        self._pose_process.stdin.write(
+            (json.dumps(command) + '\n').encode())
+        self._pose_process.stdin.flush()
+
+    def _stop_pose_recording(self):
+        """Close the current per-recording MCAP without unsubscribing."""
+        if self._pose_process is None or self._pose_process.poll() is not None:
             return
-        if self._pose_process.poll() is None:
-            self._pose_process.send_signal(signal.SIGINT)
-            self._pose_process.wait(timeout=15)
-        self._pose_process = None
+        self._send_pose_worker({'command': 'stop'})
+        if not self._wait_pose_state('waiting', 15):
+            raise RuntimeError('pose recording did not finalize in time')
 
     def _stop_episode(self, request, response):
         """Finalize the current episode and resume idle preview."""
@@ -245,7 +293,7 @@ class H264CaptureNode(Node):
             )
             return response
         self._write_validation(self._process.poll())
-        self._stop_pose()
+        self._stop_pose_recording()
         register_recording(self._session_dir, episode, kind)
         self._episode_dir = None
         self._recording_kind = None
@@ -260,12 +308,16 @@ class H264CaptureNode(Node):
         self._process.stdin.write((json.dumps(command) + '\n').encode())
         self._process.stdin.flush()
 
-    def _worker_state(self):
+    @staticmethod
+    def _state_from(path):
         try:
             return json.loads(
-                self._status_path.read_text(encoding='utf-8'))['state']
+                path.read_text(encoding='utf-8'))['state']
         except (OSError, KeyError, json.JSONDecodeError):
             return None
+
+    def _worker_state(self):
+        return self._state_from(self._status_path)
 
     def _wait_worker_state(self, expected, timeout):
         deadline = time.monotonic() + timeout
@@ -273,6 +325,16 @@ class H264CaptureNode(Node):
             if self._worker_state() == expected:
                 return True
             if self._process.poll() is not None:
+                return False
+            time.sleep(0.05)
+        return False
+
+    def _wait_pose_state(self, expected, timeout):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._state_from(self._pose_status_path) == expected:
+                return True
+            if self._pose_process.poll() is not None:
                 return False
             time.sleep(0.05)
         return False
@@ -345,10 +407,10 @@ class H264CaptureNode(Node):
             raise RuntimeError(
                 f'Action 4 GStreamer process exited with code {return_code}'
             )
-        if (self._pose_process is not None
+        if (not self._closed and self._pose_process is not None
                 and self._pose_process.poll() is not None):
             raise RuntimeError(
-                'Episode pose recorder exited unexpectedly with code '
+                'Persistent pose recorder exited unexpectedly with code '
                 f'{self._pose_process.returncode}')
 
     def close(self):
@@ -363,11 +425,11 @@ class H264CaptureNode(Node):
             timing_path = Path(self._output_path).with_suffix('.timing.json')
             self._wait_timing_complete(timing_path, 20)
             self._write_validation(self._process.poll())
-            self._stop_pose()
+            self._stop_pose_recording()
             register_recording(self._session_dir, episode, kind)
             self._episode_dir = None
         self._stop_worker()
-        self._stop_pose()
+        self._stop_pose_worker()
         if self._session_dir is not None:
             update_session(
                 self._session_dir, status='complete', ended_at=now_text())

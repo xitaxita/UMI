@@ -33,8 +33,8 @@ class SessionReplayNode(Node):
         self.declare_parameter('playback_rate', 1.0)
         self.declare_parameter('preview_topic', '/action4/image_preview')
         self.declare_parameter('frame_id', 'action4_camera')
-        self.declare_parameter('preview_width', 640)
-        self.declare_parameter('preview_height', 360)
+        self.declare_parameter('preview_width', 1280)
+        self.declare_parameter('preview_height', 720)
         self.declare_parameter('between_items_seconds', 1.0)
         input_path = str(self.get_parameter('input_path').value)
         self._rate = float(self.get_parameter('playback_rate').value)
@@ -46,6 +46,8 @@ class SessionReplayNode(Node):
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._width = int(self.get_parameter('preview_width').value)
         self._height = int(self.get_parameter('preview_height').value)
+        if self._width <= 0 or self._height <= 0:
+            raise ValueError('preview width and height must be positive')
         self._between_items = float(
             self.get_parameter('between_items_seconds').value)
         self._publisher = self.create_publisher(
@@ -113,7 +115,7 @@ class SessionReplayNode(Node):
         video_delay, pose_delay = relative_start_seconds(item)
         command = [
             'ros2', 'bag', 'play', str(item.pose_path),
-            '--clock', '30', '--rate', str(self._rate),
+            '--clock', '120', '--rate', str(self._rate),
         ]
         # rosbag's /clock is the scheduling authority. These values remain in
         # the log to make the recorded pre-roll relationship visible.
@@ -139,7 +141,7 @@ class SessionReplayNode(Node):
                 with self._clock_condition:
                     clock_ns = self._clock_ns
                 frame_period_ns = int(1_000_000_000 / 30)
-                if clock_ns - stamp_ns > frame_period_ns:
+                if clock_ns - stamp_ns > 2 * frame_period_ns:
                     skipped_frames += 1
                     continue
                 self._publish(frame, stamp_ns)
@@ -167,7 +169,8 @@ class SessionReplayNode(Node):
         return False
 
     def _publish(self, frame, stamp_ns):
-        frame = cv2.resize(frame, (self._width, self._height))
+        if frame.shape[1] != self._width or frame.shape[0] != self._height:
+            frame = cv2.resize(frame, (self._width, self._height))
         message = Image()
         message.header.frame_id = self._frame_id
         message.header.stamp.sec = stamp_ns // 1_000_000_000

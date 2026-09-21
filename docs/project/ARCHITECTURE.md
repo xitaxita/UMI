@@ -21,13 +21,17 @@ must remain usable when calibration processing is absent or fails.
 `online_record.launch.py` creates one `online_session_<timestamp>` containing
 `session.yaml`, `calibration/`, and `episodes/`, then keeps Vive, RViz and the
 camera control node alive.
-The camera worker opens UVC once, warms once, and then stays in `waiting` or
-`recording`. Waiting frames feed RViz preview but are not saved. Ordinary start
+The camera worker opens UVC once and a persistent pose-recorder node establishes
+its subscriptions once. Both warm for the configured initial interval and then
+stay in `waiting` or `recording`. Waiting camera frames feed RViz and waiting
+pose messages are discarded. Ordinary start
 creates `episodes/episode_<sequence>` and calibration start creates
-`calibration/calibration_<sequence>`. Both start pose rosbag2 and attach a fresh H.264/MP4 encoder
-to the running stream. Recording frames feed both the encoder and preview. Stop
+`calibration/calibration_<sequence>`. Each start opens a fresh MCAP writer,
+waits for its first `/vive/pose`, and then attaches a fresh H.264/MP4 encoder to
+the running camera stream. Recording frames feed both encoder and preview. Stop
 detaches and finalizes the encoder, flushes MCAP, writes timing and validation
-reports, and returns to waiting without reopening the camera. The keyboard
+reports, and returns both workers to waiting without reopening camera or pose
+subscriptions. Every recording still owns a separate `pose/` bag. The keyboard
 executable is a separate service client so launch does not depend on child
 process stdin. Online UVC exposes no project-accessible Action 4 IMU stream.
 
@@ -63,6 +67,7 @@ are not saved as video timestamps. Earlier CSV descriptions are superseded.
 | `umi_ros2/umi_ros2/vive/` | Shared Vive backend and real-time pose node used by both modes. |
 | `umi_ros2/umi_ros2/camera/` | Online-only Action 4 JPEG bridge and replay preview node. |
 | `umi_ros2/umi_ros2/session/` | ROS-independent shared session layout and metadata updates. |
+| `umi_ros2/umi_ros2/postprocess/` | Non-node frame/pose alignment and later dataset exporters. |
 | `umi_ros2/umi_ros2/common/` | ROS-independent image helpers reused by live and replay paths. |
 | `umi_ros2/umi_ros2/visualization/` | Replay-time path reconstruction. |
 | `umi_ros2/launch/` | Shared, online-only, offline-only, and replay entry points. |
@@ -153,6 +158,33 @@ items before ordinary episodes, decodes each `video.mp4` into
 Rosbag `/clock` schedules absolute video timestamps so process startup latency
 does not shift the two streams. `replay_path_node` reconstructs `/vive/path` and
 clears it between items. The accepted temporal offset is not yet applied.
+Replay preview defaults to 1280x720 (configurable from the replay launch) and
+uses a 120 Hz rosbag `/clock` to reduce display scheduling quantization. This
+changes neither the source MP4 frame rate nor the live 640x360 preview.
+
+`umi_ros2.postprocess.align_session` is the non-ROS post-processing boundary.
+It uses actual MP4 PTS plus the accepted session offset as pose query times,
+linearly interpolates XYZ, uses shortest-path quaternion SLERP, and writes NPZ,
+CSV, and JSON under a separate processed-data root. It never extrapolates across
+recording boundaries or configured pose gaps and never changes raw acquisition
+files. The HDF5 exporter consumes this intermediate contract rather than
+reimplementing synchronization; a future LeRobot exporter uses the same
+boundary.
+
+The post-processing boundary is split into versioned stages:
+
+1. `calibrate_time` writes the accepted session-level temporal offset.
+2. `align_session` writes world-frame `aligned_frames.npz` per episode.
+3. `transform_session` reads only aligned output and writes
+   `episode_frames.npz`, rebased to the first valid frame pose.
+4. `export_hdf5` reads only transformed output plus source MP4 files and writes
+   the final dataset. Future LeRobot exporters attach at this same boundary.
+5. `process_session` only orchestrates those commands and owns no processing
+   mathematics.
+
+This layering keeps calibration algorithms, time interpolation, coordinate
+conventions and storage formats independently replaceable. Raw recordings are
+never output directories.
 
 ## Technical components and open questions
 

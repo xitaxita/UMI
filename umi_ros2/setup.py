@@ -42,6 +42,11 @@ setup(
             'session_replay_node = '
             'umi_ros2.visualization.session_replay_node:main',
             'align_session = umi_ros2.postprocess.align_session:main',
+            'transform_session = '
+            'umi_ros2.postprocess.transform_session:main',
+            'export_hdf5 = umi_ros2.postprocess.export_hdf5:main',
+            'export_lerobot = umi_ros2.postprocess.export_lerobot:main',
+            'process_session = umi_ros2.postprocess.process_session:main',
         ],
     },
 )

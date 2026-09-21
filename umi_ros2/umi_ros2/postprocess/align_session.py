@@ -194,6 +194,8 @@ def _write_csv(path, indices, pts, video_times, query_times, result):
 
 def align(args):
     """Align all selected episodes and return an aggregate exit status."""
+    if not 0.0 <= args.minimum_valid_ratio <= 1.0:
+        raise ValueError('minimum valid ratio must be between zero and one')
     session, episodes = resolve_episodes(args.input_path)
     offset, offset_source = load_offset(session, args.offset_seconds)
     if args.output:

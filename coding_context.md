@@ -1,5 +1,110 @@
 # UMI — Coding context
 
+## Latest update — decoupled raw-to-HDF5/LeRobot v3 pipeline (2026-09-20)
+
+D-019 is implemented for the HDF5 and native LeRobot v3 targets. Post-processing has independent
+stages: accepted `calibrate_time` metadata, `align_session` world-frame arrays,
+`transform_session` episode-local arrays, and `export_hdf5`. The transform uses
+the first valid aligned video-frame pose and computes
+`T_episode_i = inverse(T_world_reference) * T_world_i`; invalid frames remain
+invalid. `process_session` is orchestration only and writes `aligned/`,
+`transformed/`, and `dataset.hdf5` under a separate processed root. HDF5 stores
+per-frame JPEG payloads, relative `[x,y,z,qx,qy,qz,qw]`, source frame indices,
+video PTS and pose query timestamps; invalid frames are omitted and counted.
+`h5py==3.16.0` is installed in `/home/xing/umi_ros_venv` and declared as a ROS
+dependency. LeRobot 0.4.4 is isolated in `/home/xing/umi_lerobot_venv312`;
+`process_session --format lerobot|both` launches that interpreter so ROS NumPy
+and setuptools remain untouched. The exporter uses the official dataset API,
+writes video + Parquet + metadata, preserves real PTS/query timestamps, and
+does not fabricate an action field. All 51 tests, focused flake8, Jazzy symlink build, installed CLI
+help and `git diff --check` pass. A real zero-offset diagnostic on
+`online_session_20260916_185704_823701` exported 396 synchronized samples to an
+80.3 MiB HDF5 file in `/tmp`; both first relative poses were identity and JPEGs
+decoded at 1920x1080. This validates software plumbing only—the session remains
+uncalibrated. The same 174+222 samples exported to a 9.31 MB native LeRobot v3
+dataset and reloaded as 2 episodes/396 frames with 1080p images and identity
+first states. Action/task schema acceptance and an accepted-offset dataset run
+remain pending. Task:
+[dataset pipeline](docs/project/tasks/active/dataset-pipeline.md).
+
+## Replay preview resolution update (2026-09-16)
+
+The replay-only preview now defaults to 1280x720 instead of 640x360; the
+installed `replay.launch.py` exposes `preview_width` and `preview_height`
+arguments (1920x1080 is selectable for 1080p source files). Rosbag `/clock`
+is requested at 120 Hz instead of 30 Hz to reduce scheduling quantization.
+This does not alter MP4 content, source video FPS, or the live preview. The
+user request was for clearer/smoother playback, not frame interpolation.
+All 43 current tests, focused flake8, Jazzy symlink build, and installed replay
+launch argument parsing pass. The replay-only late threshold is now two nominal
+frame periods. A 1x headless run on the 468-frame old episode published 443
+frames and skipped 25, versus 442/26 with the prior one-period threshold. That
+old recording begins video 0.347 s before pose; the change primarily improves
+preview resolution, not source frame rate. Real RViz visual smoothness remains
+to be observed. Task: [session replay](docs/project/tasks/active/session-replay.md).
+
+## Current structure audit and board sync (2026-09-16)
+
+The current workspace was audited against `setup.py`, all six installed launch
+sources, configuration, camera/pose workers, session layout, replay,
+calibration, alignment, active tasks, and sample recording metadata. The
+user-facing `project.md` now distinguishes implemented behavior from software
+verification and hardware acceptance, includes all active entry points, and
+corrects the recording guarantee: `video.validation.json` checks the produced
+MP4 but reports `source_completeness: not_verified`. The existing
+`online_session_20260913_172757_796981` contains one calibration and three
+episodes but is still `not_calibrated` and predates D-018 hardware acceptance.
+The current source suite was rerun: 42 tests passed on 2026-09-16. No rebuild,
+hardware run, runtime code, or raw recording was changed in this audit. Next:
+record two real episodes with the current persistent pose worker, then a real
+calibration and accepted-offset alignment. The older architecture/requirements
+records contain historical descriptions; current runtime is MJPEG UVC to H.264
+MP4, not native-H.264 remux or `usb_cam`.
+
+## Latest update — operator environment and project board (2026-09-14)
+
+README now contains the complete verified Ubuntu 24.04 / ROS 2 Jazzy setup,
+system dependencies, creation of `/home/xing/umi_ros_venv` with system site
+packages, pinned Python tooling (`setuptools==68.1.2`), rosdep/build checks,
+per-terminal sourcing order, and hardware/device permission preflight. The
+user-facing `project.md` has been expanded into a complete current-state board:
+scope, online/offline behavior, components, raw and processed layouts,
+calibration/alignment, verified evidence, pending hardware acceptance,
+constraints, roadmap, and project-record links. No runtime code changed.
+
+## Latest update — persistent online pose recording (2026-09-14)
+
+D-018 is implemented. `h264_capture_node` starts one internal
+`PoseRecordingWorker` before the camera worker. The pose node subscribes once
+to `/vive/pose`, `/tf`, and transient-local `/tf_static`; its configured five
+second warmup runs alongside camera warmup and discards data. Every calibration
+or episode opens a fresh `pose/` MCAP, requires its first pose (`recording_ready`)
+before MP4 starts, then closes video before pose and returns both workers to
+waiting. Thus episode directories remain independent while per-episode DDS
+startup delay is removed. A ROS integration test reused one subscriber and
+successfully finalized two distinct MCAP bags. All 42 tests, focused flake8,
+ROS 2 Jazzy venv build, online launch parsing, and `git diff --check` pass.
+Hardware acceptance is pending.
+Task: [persistent pose recording](docs/project/tasks/active/persistent-pose-recording.md).
+`project.md` was restored from the last Git baseline and rewritten to reflect
+the current verified project state after the user asked to finish pending work.
+
+## Latest update — per-frame alignment (2026-09-13)
+
+D-017 `align_session` is implemented in `umi_ros2/umi_ros2/postprocess/` as an
+ordinary Python CLI. Session input processes numeric ordinary episodes;
+episode input processes one item. It reads actual MP4 PTS, the accepted session
+offset (or an explicit diagnostic override), and `/vive/pose` MCAP; linearly
+interpolates XYZ and shortest-path SLERPs normalized XYZW quaternions. Frames
+outside pose coverage or across a >0.1 s gap are invalid rather than
+extrapolated. Outputs are separate `aligned_frames.npz`, inspectable CSV,
+per-episode `alignment.json`, and session summary. Raw data stays unchanged.
+A real-session zero-offset diagnostic produced 457/468, 393/405, and 240/249
+valid frames; this is software evidence, not temporal-accuracy acceptance.
+All 39 tests and focused flake8 pass. Task:
+[align session](docs/project/tasks/active/align-session.md). HDF5 and LeRobot
+exporters remain unimplemented.
+
 ## Next phase decision — Python-only post-processing (2026-09-13)
 
 D-017 fixes the next implementation boundary: temporal alignment, per-frame

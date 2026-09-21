@@ -1,7 +1,7 @@
 # Align video frames to Vive poses
 
 - **Task identity:** `align-session`
-- **Status:** In progress
+- **Status:** Implemented and software-verified; accepted-offset validation pending
 - **Decision source:** D-017
 
 ## Goal
@@ -29,3 +29,15 @@ interpolation bracket/gap, validity, XYZ position, and XYZW quaternion.
   never extrapolated.
 - Raw files remain unchanged and existing output is not overwritten unless the
   operator explicitly requests it.
+
+## Current evidence
+
+- Tests cover position interpolation, shortest-path SLERP, duplicate pose
+  timestamps, normalization, range/gap rejection, episode ordering, accepted
+  offset loading, and per-episode failure isolation.
+- A diagnostic run over real `online_session_20260913_172757_796981` with an
+  explicit zero offset processed all three episodes: 457/468, 393/405, and
+  240/249 valid frames. This validates reading and interpolation, not temporal
+  accuracy.
+- Pending: rerun with an accepted real calibration result and inspect motion
+  alignment before treating generated samples as training data.

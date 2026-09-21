@@ -89,3 +89,17 @@ def test_replay_launch_uses_auto_detected_separated_artifacts():
     assert "executable='replay_path_node'" in source
     assert 'compressed_preview_node' not in source
     assert "ros2', 'bag', 'play'" not in source
+
+
+def test_replay_preview_quality_defaults_are_playback_only():
+    """Expose a clearer replay without changing live acquisition settings."""
+    launch = (LAUNCH_DIR / 'replay.launch.py').read_text()
+    replay = (
+        PACKAGE_ROOT / 'umi_ros2' / 'visualization' /
+        'session_replay_node.py'
+    ).read_text()
+    assert "'preview_width', default_value='1280'" in launch
+    assert "'preview_height', default_value='720'" in launch
+    assert "self.declare_parameter('preview_width', 1280)" in replay
+    assert "self.declare_parameter('preview_height', 720)" in replay
+    assert "'--clock', '120'" in replay

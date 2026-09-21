@@ -16,19 +16,20 @@ format. The primary users are operators collecting manipulation demonstrations.
 | Vive pose acquisition | ROS 2 reads a Vive device and publishes its timestamped pose, bounded path, and optional TF for ROS tools and RViz. | Current delivery |
 | Camera image acquisition | DJI Action 4 and the Vive Tracker are rigidly mounted on the gripper. Offline mode records 4K/60 fps to microSD and shows pose/path/TF in RViz; online mode uses USB at a target 1080p/30 fps, records image and pose through ROS 2, and displays both in RViz. EIS is off in both modes. | Online implemented; offline pending |
 | Data recording | Every acquisition has a root `session.yaml`. Offline capture creates `offline_session_<timestamp>/` with reserved `calibration/` and Vive pose/TF MCAP under `pose/`; the operator later adds `video.mp4`. `/vive/path` is displayed but not recorded. | Current delivery; software and hardware verification pending |
-| Online episodes | Keep one `online_session_<timestamp>` and the online ROS system/preview running while the operator records dedicated items under `calibration/` and ordinary items under `episodes/`. Each item contains MP4, timing/validation metadata, and pose/TF MCAP. | Current delivery; hardware acceptance pending |
-| Data synchronization | The first implementation records one ArUco calibration episode per uninterrupted acquisition session, aligns interpolated video-marker and Vive trajectories by minimum normalized MSE, saves the signed video-to-pose offset and a reviewable quality report, then applies that offset to the session episodes. Accuracy must be measured locally and is not inherited from exUMI. | Estimator implemented; real calibration and offset application pending |
-| LeRobot conversion | Synchronized demonstrations are converted to a valid LeRobot dataset. Detailed schema and validation are not yet defined. | Not yet scheduled |
+| Online episodes | Keep one `online_session_<timestamp>`, camera stream, and pose subscriptions alive while recording dedicated calibration and ordinary episodes. Warm camera/pose once, open an independent MCAP per item, and require its first pose before MP4 starts. | Current delivery; hardware acceptance pending |
+| Data synchronization | Record one ArUco calibration per uninterrupted session, estimate a signed offset, then use a non-ROS Python tool to apply it and interpolate one Vive pose per actual MP4 frame. Invalid coverage/gaps remain explicit and raw files stay unchanged. | Estimator and alignment tool implemented; accepted real calibration validation pending |
+| Dataset conversion | Accepted calibration feeds frame/pose alignment; each episode is rebased to its first valid pose and exported through independent HDF5 and native LeRobot v3 adapters. | Current implementation task |
 
 ## Current delivery boundary
 
 The current delivery includes pose-only offline acquisition and repeated online
 episode control. Online uses MJPEG UVC input, H.264 MP4 output, best-effort
 preview, camera-stream warmup, and pose pre-roll.
-The temporal-offset estimator is implemented but not yet accepted on a real
-calibration episode or consumed by frame-to-pose interpolation. Camera/extrinsic
-calibration, detailed offline episode/calibration behavior, and LeRobot
-conversion remain outside the delivered implementation.
+The temporal-offset estimator and decoupled alignment, episode-coordinate and
+HDF5 export stages are implemented, but no real calibration result has yet been
+accepted for final dataset validation. Camera/extrinsic calibration, detailed
+offline episode/calibration behavior, and native LeRobot v3 conversion remain
+outside the delivered implementation.
 
 Current delivery acceptance requires a successful ROS 2 build, passing software
 tests, and a hardware run showing a changing pose, TF, and trajectory path for

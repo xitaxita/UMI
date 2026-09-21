@@ -6,7 +6,11 @@ import numpy as np
 
 import pytest
 
-from umi_ros2.postprocess.align_session import load_offset, resolve_episodes
+from umi_ros2.postprocess.align_session import (
+    align,
+    load_offset,
+    resolve_episodes,
+)
 from umi_ros2.postprocess.alignment import (
     interpolate_poses,
     prepare_pose_samples,
@@ -91,3 +95,43 @@ def test_loads_only_accepted_calibration_result(tmp_path):
     offset, source = load_offset(session)
     assert offset == pytest.approx(0.123)
     assert source == str(result)
+
+
+def test_session_alignment_records_episode_failure_and_continues(
+        tmp_path, monkeypatch):
+    """Write a complete summary even when one episode cannot be aligned."""
+    session = tmp_path / 'online_session_example'
+    first = session / 'episodes' / 'episode_0001'
+    second = session / 'episodes' / 'episode_0002'
+    first.mkdir(parents=True)
+    second.mkdir()
+    (session / 'session.yaml').write_text('mode: online\n', encoding='utf-8')
+    output = tmp_path / 'processed'
+    calls = []
+
+    def fake_align(episode, destination, *args, **kwargs):
+        calls.append(episode.name)
+        if episode == first:
+            raise ValueError('bad pose bag')
+        destination.mkdir(parents=True)
+        return {
+            'status': 'accepted', 'source_episode': str(episode),
+            'valid_frame_count': 10, 'frame_count': 10,
+        }
+
+    monkeypatch.setattr(
+        'umi_ros2.postprocess.align_session.align_episode', fake_align)
+    arguments = type('Arguments', (), {
+        'input_path': str(session),
+        'output': str(output),
+        'offset_seconds': 0.0,
+        'maximum_pose_gap': 0.1,
+        'minimum_valid_ratio': 0.95,
+        'overwrite': False,
+    })()
+    assert align(arguments) == 1
+    assert calls == ['episode_0001', 'episode_0002']
+    summary = json.loads(
+        (output / 'alignment_summary.json').read_text(encoding='utf-8'))
+    assert [item['status'] for item in summary['episodes']] == [
+        'failed', 'accepted']

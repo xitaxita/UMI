@@ -1,5 +1,24 @@
 # UMI — Development decisions
 
+## D-019: Decoupled raw-to-dataset post-processing pipeline
+
+- **Status:** Accepted on 2026-09-20.
+- Post-processing is an ordinary Python workflow with four independently
+  runnable stages: temporal calibration, frame/pose alignment, episode-local
+  coordinate transformation, and format-specific export.
+- Raw sensor artifacts are immutable. Calibration may attach reviewed metadata
+  to the session; later stages consume versioned contracts and write to a
+  separate processed-data root.
+- Episode-local coordinates use the first valid aligned video-frame pose as
+  the reference: `T_episode_i = inverse(T_world_0) * T_world_i`. Invalid frames
+  remain invalid; the transform stage does not extrapolate or repair tracking.
+- HDF5 and native LeRobot v3 are supported export targets. Both format
+  exporters depend on the transformed intermediate contract, never on ROS bags
+  or calibration internals, so either exporter can change without changing
+  synchronization or coordinate math.
+- One orchestration CLI may run the stages in order, but orchestration contains
+  no calibration, interpolation, transform, or serialization algorithms.
+
 ## D-014: First temporal calibration uses the exUMI trajectory method
 
 - **Status:** Accepted for the first implementation on 2026-09-12.
@@ -310,3 +329,19 @@ No kernel module was changed or loaded. Retain diagnostic patch as inactive.
 - **Dependency clarification:** Reading ROS-recorded MCAP may still use Python
   libraries for ROS message deserialization, but no ROS graph, running node,
   DDS communication, RViz, or launch process is required.
+
+## D-018: Keep the online pose recorder subscribed for the whole session
+
+- **Status:** Accepted
+- **Date:** 2026-09-13
+- **Source:** The user selected persistent pose recording and required separate
+  per-recording bags plus pose warmup alongside the camera warmup.
+- **Decision:** Start one internal pose-recorder node per online session. It
+  subscribes continuously to `/vive/pose`, `/tf`, and `/tf_static`; during the
+  initial five-second warmup it receives but does not store messages. Each
+  calibration or ordinary episode opens a fresh MCAP writer in that recording's
+  own `pose/` directory, while waiting periods remain unrecorded.
+- **Start boundary:** After an episode command, open the new pose writer and
+  require its first `/vive/pose` sample before enabling MP4 writing. Stop MP4
+  first and pose second. This removes per-episode DDS discovery latency without
+  merging episode files or inventing pose extrapolation.
