@@ -5,7 +5,9 @@ import numpy as np
 import pytest
 
 from umi_ros2.synchronization.temporal_alignment import (
+    align_feature_trajectories,
     align_trajectories,
+    quaternion_rotation_vectors,
     scalar_pose_trajectory,
 )
 
@@ -59,3 +61,50 @@ def test_stationary_trajectory_is_rejected():
     times = np.arange(10, dtype=float)
     with pytest.raises(ValueError, match='insufficient'):
         align_trajectories(times, np.ones(10), times, np.ones(10))
+
+
+def test_multifeature_alignment_recovers_substep_offset():
+    """Fuse several projected position/rotation channels at one latency."""
+    expected = 0.1374
+    video_times = np.arange(2.0, 10.0, 1 / 30)
+    pose_times = np.arange(1.0, 11.0, 1 / 90)
+
+    def source(times):
+        return np.column_stack((
+            np.sin(times * 1.7) + 0.2 * np.sin(times * 4.1),
+            np.cos(times * 1.1) + 0.15 * np.sin(times * 3.3),
+            np.sin(times * 0.7 + 0.4),
+            np.cos(times * 2.2 - 0.3),
+            np.zeros_like(times),
+            np.zeros_like(times),
+        ))
+
+    pose = source(pose_times - expected)
+    latent = source(video_times)
+    mapping = np.array([
+        [0.8, 0.0, 0.0, 0.0],
+        [0.0, 0.7, 0.0, 0.0],
+        [0.0, 0.0, 0.8, 0.0],
+        [0.0, 0.0, 0.0, 0.7],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ])
+    video = latent @ mapping
+    result = align_feature_trajectories(
+        video_times, video, pose_times, pose, step=0.002)
+
+    assert result.offset_seconds == pytest.approx(expected, abs=0.003)
+    assert result.mse < 0.1
+
+
+def test_quaternion_rotation_vectors_preserve_continuous_rotation():
+    """Handle quaternion sign aliases while recovering relative rotation."""
+    angles = np.linspace(0, 0.8, 9)
+    quaternions = np.column_stack((
+        np.zeros(9), np.zeros(9), np.sin(angles / 2),
+        np.cos(angles / 2)))
+    quaternions[4:] *= -1
+    vectors = quaternion_rotation_vectors(quaternions)
+
+    assert vectors[:, 2] == pytest.approx(angles)
+    assert vectors[:, :2] == pytest.approx(np.zeros((9, 2)))

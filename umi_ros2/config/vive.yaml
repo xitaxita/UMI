@@ -5,7 +5,8 @@ vive_pose_node:
     device_index: -1
     libsurvive_args: ""
     world_frame: vive_world
-    child_frame: vive_tracker
+    tracker_frame: vive_tracker
+    child_frame: gripper_tcp
     pose_topic: vive/pose
     path_topic: vive/path
     max_path_points: 10000

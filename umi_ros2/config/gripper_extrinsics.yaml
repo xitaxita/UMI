@@ -1,0 +1,11 @@
+# Rigid transform measured in co2_in_co1.txt.
+# Convention: T_parent_child maps coordinates from gripper_tcp into
+# vive_tracker; quaternion ordering follows ROS geometry_msgs (x, y, z, w).
+gripper_extrinsics:
+  ros__parameters:
+    parent_frame: vive_tracker
+    child_frame: gripper_tcp
+    translation_m: [0.0, -0.080371453, 0.194957425]
+    rotation_xyzw: [0.628736470, -0.628736470, 0.323559039, 0.323559039]
+    source_parent_name: co1
+    source_child_name: co2

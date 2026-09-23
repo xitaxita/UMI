@@ -5,6 +5,10 @@
 Estimate one reviewable constant video-to-Vive time offset for an uninterrupted
 online acquisition session using the exUMI ArUco trajectory-alignment method.
 
+The current upgrade broadens that estimator to fuse all reliable 2D marker
+features with TCP translation and rotation while retaining one reviewable
+constant offset and the same command-line entry point.
+
 ## Confirmed scope
 
 - Record or designate one calibration episode after the camera's one-time warmup.
@@ -53,10 +57,21 @@ tests pass. Focused flake8, `git diff --check`, venv package build and installed
 CLI help pass. OpenCV detected ID 4 in the generated marker. The MCAP reader
 loaded 2,821 `/vive/pose` messages from the existing offline recording.
 
-Pending: record one real calibration episode, tune acceptance thresholds from
-its evidence, quantify repeatability, and implement consumption of an accepted
-offset during frame-to-pose interpolation. The current code does not alter or
-synchronize ordinary episode data yet.
+Pending: repeat calibration across multiple launches, tune acceptance
+thresholds from that evidence, and quantify repeatability. Accepted offsets are
+already consumed by the separate `align_session` stage; raw recordings remain
+immutable.
+
+Multi-feature v2 was implemented on 2026-09-21. It extracts normalized ArUco
+centre X/Y, log area and unwrapped in-plane angle, and compares every
+informative channel against TCP XYZ, continuous rotation-vector channels and
+motion energy. Weak pairs are discarded; agreeing offsets are clustered and
+robustly fused. The discrete minimum is quadratically refined and three
+temporal windows must agree. On
+`online_session_20260921_181056_923446/calibration/calibration_001`, 1279/1332
+frames detected the marker (96.0%); the accepted estimate was approximately
+-95.01 ms and the three window estimates were -98.58/-89.40/-90.27 ms (4.14 ms standard
+deviation). This is one real run, not yet a repeated-session accuracy claim.
 
 Session organization was implemented on 2026-09-13. A dedicated calibration is
 started through `start_calibration` and stored under

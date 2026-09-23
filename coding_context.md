@@ -1,5 +1,45 @@
 # UMI — Coding context
 
+## Latest update — multi-feature temporal calibration v2 (2026-09-21)
+
+The `calibrate_time` CLI now fuses all informative ArUco centre-X/Y, log-area
+and unwrapped in-plane-angle channels with TCP XYZ, continuous rotation-vector
+channels and motion energy. It rejects weak channel pairs, clusters agreeing
+offsets, quadratically refines scalar minima, and requires temporal-window
+repeatability. The offset convention and output paths remain unchanged. The
+real `online_session_20260921_181056_923446/calibration/calibration_001` run
+detected 1279/1332 marker frames, estimated -95.01 ms, and produced
+-98.58/-89.40/-90.27 ms window estimates (4.14 ms standard deviation), passing software
+acceptance. This is not yet a repeated-session or hardware-sync accuracy claim.
+
+## Latest update — pose/path now represent the gripper TCP (2026-09-21)
+
+Only `umi_ros2/umi_ros2/vive/pose_node.py` runtime behavior changed. Each raw
+libsurvive `vive_world -> vive_tracker` pose is composed with the accepted
+D-020 `vive_tracker -> gripper_tcp` rigid transform before publishing
+`/vive/pose` and appending `/vive/path`. Following the user's next request, the
+optional TF broadcaster now publishes both `vive_world -> vive_tracker` and
+`vive_world -> gripper_tcp`; `/vive/pose` and `/vive/path` remain TCP data.
+No launch, recorder, synchronization or post-processing code changed. Identity
+and 180-degree composition checks,
+focused flake8, all 51 tests and `git diff --check` pass. Hardware/RViz
+direction and endpoint placement remain for user inspection.
+
+## Latest update — Tracker-to-gripper extrinsic recorded (2026-09-21)
+
+D-020 records the user-supplied `co2_in_co1.txt` transform as parent
+`vive_tracker` (co1) to child `gripper_tcp` (co2). The canonical values are now
+in `umi_ros2/config/gripper_extrinsics.yaml`: translation
+`[0.0, -0.080371453, 0.194957425]` metres and ROS-order XYZW quaternion
+`[0.628736470, -0.628736470, 0.323559039, 0.323559039]`. These are the user's
+remeasured values from 2026-09-21 and replace the previous calibration. The
+same values are synchronized in the pose node's active constants. Numerical checks
+confirm a unit quaternion, orthonormal rotation and agreement between the
+supplied matrix and quaternion to below `1e-9`. The pose node applies this
+transform to TCP pose/path and publishes both raw Tracker and converted TCP TF;
+the standalone relative-TF diagnostic remains Tracker-only. Hardware/RViz
+inspection is next.
+
 ## Latest update — decoupled raw-to-HDF5/LeRobot v3 pipeline (2026-09-20)
 
 D-019 is implemented for the HDF5 and native LeRobot v3 targets. Post-processing has independent

@@ -286,7 +286,10 @@ Launch 持续运行期间，普通 episode 不需要重复标定。
 9. 记下刚生成的 `online_session_<时间>/calibration/calibration_001`
    目录名称。
 
-移动时应有明显转折，但不要快到画面严重模糊。
+移动时应有明显转折，但不要快到画面严重模糊。当前标定器会同时利用标记的
+水平/垂直中心、面积和画面内角度，以及 TCP 的三维平移和旋转；建议动作同时
+包含左右、上下、前后和两到三个方向的旋转，并使用不同幅度、速度和停顿，避免
+完全周期重复。短暂遮挡可以接受，但应尽量让标记持续完整可见。
 
 ## 12. 计算并检查时间差
 
@@ -306,9 +309,12 @@ alignment_report.png
 
 检查步骤：
 
-1. 打开 `alignment_report.png`，确认两条曲线在主要运动和转折位置上对齐。
+1. 打开 `alignment_report.png`，确认两条运动能量曲线在主要启动、停止和转折
+   位置上对齐。
 2. 打开 `time_offset.json`，确认 `accepted` 为 `true`。
-3. 如果命令失败、`accepted` 为 `false`，或者曲线明显没有对齐，应重新录制
+3. 检查 `window_offsets_seconds` 相互接近，并确认
+   `window_offset_std_seconds` 不超过验收阈值（默认 20 ms）。
+4. 如果命令失败、`accepted` 为 `false`，或者曲线明显没有对齐，应重新录制
    标定 episode，不要继续使用该结果。
 
 当前版本会计算并保存时间差，但还不会自动修改普通 episode。请保留标定

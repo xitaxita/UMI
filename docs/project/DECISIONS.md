@@ -1,5 +1,18 @@
 # UMI — Development decisions
 
+## D-020: Define the measured Tracker-to-gripper TCP extrinsic
+
+- **Status:** Accepted on 2026-09-21.
+- The supplied `co2_in_co1.txt` defines co1 as parent `vive_tracker` and co2 as
+  child `gripper_tcp`.
+- The transform was remeasured on 2026-09-21. The active value is translation
+  `[0.0, -0.080371453, 0.194957425]` metres
+  and ROS-order quaternion
+  `[0.628736470, -0.628736470, 0.323559039, 0.323559039]` (XYZW).
+- `umi_ros2/config/gripper_extrinsics.yaml` is the canonical configuration.
+  The pose node currently mirrors these values in its active constants, applies
+  them to TCP pose/path, and publishes both raw Tracker and converted TCP TF.
+
 ## D-019: Decoupled raw-to-dataset post-processing pipeline
 
 - **Status:** Accepted on 2026-09-20.
@@ -39,6 +52,21 @@
 - First delivery excludes optical-flow fallback, Action 4 IMU alignment,
   hardware triggering and joint spatial-temporal optimization. exUMI's reported
   `<50 ms` result is reference evidence, not an accuracy claim for this system.
+
+### D-014 amendment: fuse all reliable marker and TCP motion channels
+
+- **Status:** Accepted by user request on 2026-09-21.
+- Replace the first scalar-only estimator with a backward-compatible
+  multi-feature estimator. Video features are ArUco centre X/Y, logarithmic
+  area and unwrapped in-plane angle; pose features are TCP XYZ and a continuous
+  rotation vector derived from the recorded quaternion.
+- Estimate one constant offset from both multivariate trajectory agreement and
+  motion-energy agreement. Refine the discrete search minimum quadratically,
+  report per-window repeatability, and reject weak, ambiguous or inconsistent
+  results. Preserve the explicit `pose_time = video_time + offset` convention.
+- Do not claim camera-to-marker 3D pose without calibrated camera intrinsics.
+  Optical flow, Action 4 IMU and hardware synchronization remain separate
+  future improvements.
 
 ## D-013: Long-running online session with episode controls
 

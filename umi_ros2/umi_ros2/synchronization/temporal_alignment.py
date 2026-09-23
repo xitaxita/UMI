@@ -24,6 +24,180 @@ class AlignmentResult:
     errors: np.ndarray
 
 
+def quaternion_rotation_vectors(quaternions):
+    """Convert continuous quaternions to rotation vectors from sample 0."""
+    values = np.asarray(quaternions, dtype=np.float64).copy()
+    if values.ndim != 2 or values.shape[1] != 4:
+        raise ValueError('quaternions must have shape (N, 4)')
+    norms = np.linalg.norm(values, axis=1)
+    if np.any(norms < 1e-12) or not np.isfinite(values).all():
+        raise ValueError('quaternions must be finite and non-zero')
+    values /= norms[:, None]
+    for index in range(1, len(values)):
+        if np.dot(values[index - 1], values[index]) < 0:
+            values[index] *= -1
+    vectors = [np.zeros(3)]
+    cumulative = np.zeros(3)
+    for previous, value in zip(values[:-1], values[1:]):
+        inverse = np.array((-previous[0], -previous[1], -previous[2],
+                            previous[3]))
+        xyz = (inverse[3] * value[:3] + value[3] * inverse[:3]
+               + np.cross(inverse[:3], value[:3]))
+        scalar = inverse[3] * value[3] - np.dot(inverse[:3], value[:3])
+        if scalar < 0:
+            xyz, scalar = -xyz, -scalar
+        length = np.linalg.norm(xyz)
+        increment = (np.zeros(3) if length < 1e-12 else xyz / length
+                     * (2.0 * np.arctan2(length, scalar)))
+        cumulative = cumulative + increment
+        vectors.append(cumulative.copy())
+    return np.asarray(vectors)
+
+
+def _standardize_columns(values, minimum_std=1e-8):
+    """Standardize informative columns and discard constant channels."""
+    values = np.asarray(values, dtype=np.float64)
+    deviations = np.std(values, axis=0)
+    mask = np.isfinite(deviations) & (deviations >= minimum_std)
+    if not np.any(mask) or not np.isfinite(values).all():
+        raise ValueError('feature trajectory has insufficient finite motion')
+    selected = values[:, mask]
+    return (selected - np.mean(selected, axis=0)) / np.std(
+        selected, axis=0)
+
+
+def _motion_features(times, values):
+    """Return standardized values plus signed velocity and motion energy."""
+    normalized = _standardize_columns(values)
+    velocity = np.gradient(normalized, times, axis=0)
+    if len(velocity) >= 5:
+        kernel = np.ones(5) / 5
+        velocity = np.column_stack([
+            np.convolve(velocity[:, index], kernel, mode='same')
+            for index in range(velocity.shape[1])
+        ])
+    velocity = _standardize_columns(velocity)
+    energy = np.sqrt(np.mean(np.square(velocity), axis=1))[:, None]
+    energy = _standardize_columns(energy)
+    return np.column_stack((normalized, velocity)), energy[:, 0]
+
+
+def _regression_error(observed, predictors, ridge=1e-3):
+    """Score held-out prediction without fitting the validation set."""
+    count = len(observed)
+    training = np.arange(count) % 3 != 0
+    validation = ~training
+    if np.count_nonzero(training) < predictors.shape[1] + 2:
+        training[:] = True
+        validation[:] = True
+    design = np.column_stack((predictors, np.ones(count)))
+    gram = design[training].T @ design[training]
+    regularizer = np.eye(gram.shape[0]) * ridge
+    regularizer[-1, -1] = 0
+    coefficients = np.linalg.solve(
+        gram + regularizer, design[training].T @ observed[training])
+    residual = observed[validation] - design[validation] @ coefficients
+    return float(np.mean(np.square(residual)))
+
+
+def _quadratic_minimum(offsets, errors, index):
+    """Refine an interior sampled minimum with a local parabola."""
+    if index == 0 or index == len(errors) - 1:
+        return float(offsets[index])
+    left, middle, right = errors[index - 1:index + 2]
+    denominator = left - 2 * middle + right
+    if not np.isfinite([left, middle, right]).all() or denominator <= 0:
+        return float(offsets[index])
+    adjustment = 0.5 * (left - right) / denominator
+    return float(offsets[index] + np.clip(adjustment, -1, 1)
+                 * (offsets[index + 1] - offsets[index]))
+
+
+def align_feature_trajectories(
+        video_times, video_features, pose_times, pose_features,
+        minimum_offset=-1.0, maximum_offset=1.0, step=0.001,
+        minimum_overlap=0.8, ambiguity_exclusion=0.05):
+    """Align and robustly fuse informative marker/TCP channel pairs."""
+    video_times = np.asarray(video_times, dtype=np.float64)
+    pose_times = np.asarray(pose_times, dtype=np.float64)
+    video_motion = _standardize_columns(video_features)
+    pose_motion = _standardize_columns(pose_features)
+    _, video_energy = _motion_features(video_times, video_features)
+    _, pose_energy = _motion_features(pose_times, pose_features)
+    candidates = []
+    for video_column in range(video_motion.shape[1]):
+        for pose_column in range(pose_motion.shape[1]):
+            candidate = align_trajectories(
+                video_times, video_motion[:, video_column],
+                pose_times, pose_motion[:, pose_column],
+                minimum_offset, maximum_offset, step, minimum_overlap,
+                ambiguity_exclusion)
+            if candidate.mse <= 0.8 and candidate.uniqueness_margin >= 0.03:
+                candidates.append(candidate)
+    energy_candidate = align_trajectories(
+        video_times, video_energy, pose_times, pose_energy,
+        minimum_offset, maximum_offset, step, minimum_overlap,
+        ambiguity_exclusion)
+    if (energy_candidate.mse <= 0.8
+            and energy_candidate.uniqueness_margin >= 0.03):
+        candidates.append(energy_candidate)
+    if len(candidates) < 2:
+        raise ValueError('fewer than two informative motion channels agree')
+
+    weights = np.asarray([
+        item.uniqueness_margin / max(item.mse, 0.02)
+        for item in candidates
+    ])
+    candidate_offsets = np.asarray([
+        item.offset_seconds for item in candidates
+    ])
+    agreement_radius = max(0.030, step * 3)
+    support = np.asarray([
+        np.sum(weights[np.abs(candidate_offsets - offset)
+                       <= agreement_radius])
+        for offset in candidate_offsets
+    ])
+    center = candidate_offsets[int(np.argmax(support))]
+    agreed = np.abs(candidate_offsets - center) <= agreement_radius
+    if np.count_nonzero(agreed) < 2:
+        raise ValueError('informative motion channels do not agree on offset')
+    candidates = [item for item, keep in zip(candidates, agreed) if keep]
+    weights = weights[agreed]
+    candidate_offsets = candidate_offsets[agreed]
+    order = np.argsort(candidate_offsets)
+    cumulative = np.cumsum(weights[order])
+    median_index = order[np.searchsorted(cumulative, cumulative[-1] / 2)]
+    best_offset = float(candidate_offsets[median_index])
+    offsets = candidates[0].offsets
+    normalized_curves = []
+    for item in candidates:
+        finite = item.errors[np.isfinite(item.errors)]
+        scale = np.percentile(finite, 75) - np.min(finite)
+        normalized_curves.append(
+            np.clip((item.errors - np.min(finite)) / max(scale, 1e-9),
+                    0, 10))
+    errors = np.average(normalized_curves, axis=0, weights=weights)
+    best_index = int(np.argmin(np.abs(offsets - best_offset)))
+    exclusion = np.abs(offsets - best_offset) <= ambiguity_exclusion
+    competitors = errors.copy()
+    competitors[exclusion] = np.inf
+    second_best = float(np.min(competitors))
+    fused_best = float(errors[best_index])
+    margin = ((second_best - fused_best) / max(second_best, 1e-12)
+              if np.isfinite(second_best) else 1.0)
+    return AlignmentResult(
+        offset_seconds=best_offset,
+        mse=fused_best,
+        second_best_mse=second_best,
+        uniqueness_margin=float(margin),
+        overlap_ratio=float(np.average(
+            [item.overlap_ratio for item in candidates], weights=weights)),
+        direction_sign=1,
+        offsets=offsets,
+        errors=errors,
+    )
+
+
 def normalize_trajectory(values, minimum_std=1e-9):
     """Remove scalar offset and scale while rejecting stationary data."""
     values = np.asarray(values, dtype=np.float64)
@@ -104,7 +278,8 @@ def align_trajectories(
     best_error = float(errors[sign_index, offset_index])
     if not np.isfinite(best_error):
         raise ValueError('no offset has sufficient trajectory overlap')
-    best_offset = float(offsets[offset_index])
+    best_offset = _quadratic_minimum(
+        offsets, errors[sign_index], offset_index)
     exclusion = np.abs(offsets - best_offset) <= ambiguity_exclusion
     competitors = errors.copy()
     competitors[:, exclusion] = np.inf

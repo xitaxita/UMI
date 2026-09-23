@@ -1,6 +1,6 @@
 # UMI 项目看板
 
-> 核对时间：2026-09-20。依据当前工作区源码、配置、测试和真实 session 诊断核对。ROS 包版本：`umi_ros2 0.2.0`。
+> 核对时间：2026-09-21。依据当前工作区源码、配置、测试和真实 session 诊断核对。ROS 包版本：`umi_ros2 0.2.0`。
 
 ## 项目目标与当前重点
 
@@ -12,16 +12,17 @@ DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视�
 
 | 能力 | 当前实现 | 验证边界 |
 | --- | --- | --- |
-| Vive 定位 | pysurvive 选取 Tracker；发布 `/vive/pose`、`/tf`、有界 `/vive/path`；默认发布定时器 90 Hz | 用户曾确认实际 pose 正确；TF/path 一致性、遮挡恢复与有效测量频率未正式验收 |
+| Vive 定位 | pysurvive 选取 Tracker；`/vive/pose` 和 `/vive/path` 表示夹爪 TCP，`/tf` 同时发布 `vive_world → vive_tracker` 与 `vive_world → gripper_tcp`；默认发布定时器 90 Hz | 数学组合和软件测试通过；两个 TF 及夹爪末端位置等待用户真机检查 |
 | 在线观察 | `online_view.launch.py` 启动 Vive、Action 4 和 RViz2，不创建正式在线 episode | launch/软件检查通过；设备须处于 Webcam 模式 |
 | 在线采集 | `online_record.launch.py` 创建一个 session；键盘服务可依次录 calibration 和多条 episode | 软件实现与测试通过；新版常驻 pose recorder 尚未完成 Action 4 + Vive 多 episode 真机验收 |
 | 离线采集 | `offline_record.launch.py` 仅记录 Vive pose/TF MCAP，RViz 显示路径；相机自行录 SD 卡 | 单次 pose-only 基础版；完整硬件和视频导入验收待做，无离线多 episode 控制 |
 | 在线回放 | `replay.launch.py` 可读取一条 calibration/episode，或按 calibration→episodes 顺序读整个 session；回放预览默认 1280×720，可选原视频 1920×1080 | 1× 无 RViz 进程实测可发布 443/468 帧；RViz 实际画面和整场 session 仍待观察 |
-| 时间差估计 | `generate_aruco_marker` 和 `calibrate_time` 生成标记并估计一条在线 calibration 的常量时间差 | 合成测试和文件读取通过；没有已接受的真实标定与精度结论 |
+| 时间差估计 | `generate_aruco_marker` 和多特征 `calibrate_time` 使用 ArUco 中心/尺度/角度与 TCP 平移/旋转估计常量时间差，并检查分段一致性 | 53 项测试通过；一条真实 calibration 得到 -95.01 ms、分段标准差 4.14 ms 并通过软件验收，仍需跨次重复验证 |
 | 逐帧对齐 | `align_session` 用 MP4 真实 PTS、已接受的 offset 和 Vive MCAP 插值得到每帧 pose | 软件测试及零 offset 真实数据诊断通过；尚未以真实 accepted offset 验证 |
 | Episode 坐标变换 | `transform_session` 将每条 episode 第一条有效帧 pose 设为原点，写出版本化 NPZ/CSV/JSON | 数学单测和真实 session 零 offset 诊断通过；未用 accepted offset 验收 |
 | HDF5 数据集导出 | `export_hdf5` 保存逐帧 JPEG、相对 7D pose、帧号和时间戳；`process_session` 串联全部阶段 | 真实 session 两条 episode 共 396 样本导出并回读通过；该次使用零 offset，仅验证软件链路 |
 | LeRobot v3 导出 | `export_lerobot` 使用官方 `LeRobotDataset` API 写 Parquet、MP4 和 metadata；`process_session --format lerobot/both` 用独立环境调用 | 真实 session 两条 episode 共 396 帧导出并由 LeRobot 0.4.4 回读；零 offset 仅验证软件链路，尚无 action 字段 |
+| Tracker→夹爪 TCP 外参 | `gripper_extrinsics.yaml` 和 Vive pose 节点已同步 2026-09-21 重新标定的固定变换；节点在 `/vive/pose`、`/vive/path` 和 TCP TF 前应用它 | 矩阵/四元数数值一致性通过；`/tf` 同时保留原始 Tracker frame 和转换后的 TCP frame，真机方向待重新检查 |
 
 ## 当前在线采集怎样运行
 
@@ -125,7 +126,7 @@ recordings/offline_session_<时间>/
 2. 录制真实在线 calibration，运行 `calibrate_time`，人工检查曲线、`accepted` 状态和重复性；再用 accepted offset 跑 `align_session`。可见图像质量、视频时间锚点与姿态对应仍需人工复核。
 3. 验证 Vive TF/path 与 pose 的一致性、遮挡丢失/恢复；确认基站和世界系稳定性。默认 `publish_hz=90` 是发布定时器设置，改成 200 不保证硬件产生 200 Hz 新测量。
 4. 规划并验证离线多 episode、SD 视频导入和离线时间对齐。此部分尚无确定的最终组织细节。
-5. 在 accepted offset 数据上重新导出并验收 HDF5 与 LeRobot v3，确定任务/action 字段及训练代码期望。相机内参、相机到 Tracker 外参和 Action 4 IMU 记录仍未完成。
+5. 真机对比 `vive_world → vive_tracker`、`vive_world → gripper_tcp` 两个 TF，并检查 `/vive/pose`、`/vive/path` 的 TCP 位置与方向。新录制的 pose 已是夹爪 TCP pose，之后在 accepted offset 数据上重新导出并验收 HDF5 与 LeRobot v3，确定任务/action 字段及训练代码期望。相机内参、相机到 Tracker 外参和 Action 4 IMU 记录仍未完成。
 
 ## 资料入口
 

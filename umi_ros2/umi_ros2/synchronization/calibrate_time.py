@@ -12,7 +12,10 @@ import numpy as np
 from umi_ros2.postprocess.pose_io import read_vive_poses
 from umi_ros2.session.layout import now_text, read_session, update_session
 
-from .temporal_alignment import align_trajectories, scalar_pose_trajectory
+from .temporal_alignment import (
+    align_feature_trajectories,
+    quaternion_rotation_vectors,
+)
 
 
 OFFSET_CONVENTION = (
@@ -37,7 +40,7 @@ def video_frame_times(path):
 
 
 def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
-    """Return video-relative times and horizontal centers for one marker."""
+    """Return times and centre/scale/orientation features for one marker."""
     aruco = cv2.aruco
     if not hasattr(aruco, dictionary_name):
         raise ValueError(f'unknown ArUco dictionary {dictionary_name}')
@@ -46,7 +49,7 @@ def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
     parameters = aruco.DetectorParameters_create()
     capture = cv2.VideoCapture(str(video_path))
     detected_times = []
-    centers = []
+    features = []
     frame_index = 0
     try:
         while True:
@@ -62,8 +65,17 @@ def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
                 matches = np.flatnonzero(identifiers.reshape(-1) == marker_id)
                 if len(matches):
                     points = corners[int(matches[0])].reshape(-1, 2)
-                    detected_times.append(frame_times[frame_index])
-                    centers.append(float(np.mean(points[:, 0])))
+                    center = np.mean(points, axis=0)
+                    area = abs(float(cv2.contourArea(points)))
+                    edge = points[1] - points[0]
+                    if area > 1.0 and np.linalg.norm(edge) > 1.0:
+                        detected_times.append(frame_times[frame_index])
+                        features.append((
+                            center[0] / frame.shape[1],
+                            center[1] / frame.shape[0],
+                            np.log(area / (frame.shape[0] * frame.shape[1])),
+                            np.arctan2(edge[1], edge[0]),
+                        ))
             frame_index += 1
     finally:
         capture.release()
@@ -73,37 +85,40 @@ def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
             f'{len(frame_times)}')
     return (
         np.asarray(detected_times, dtype=np.float64),
-        np.asarray(centers, dtype=np.float64),
+        np.asarray(features, dtype=np.float64),
         frame_index,
     )
 
 
 def read_vive_pose_bag(pose_directory, topic='/vive/pose'):
-    """Read PoseStamped header times and XYZ positions from an MCAP bag."""
-    times, positions, _ = read_vive_poses(pose_directory, topic)
+    """Read PoseStamped header times, XYZ and XYZW from an MCAP bag."""
+    times, positions, orientations = read_vive_poses(pose_directory, topic)
     if len(times) < 3:
         raise ValueError(f'{topic} contains fewer than three poses')
-    return times, positions
+    return times, positions, orientations
 
 
-def save_plot(
-        path, video_times, video_values, pose_times, pose_values, result):
+def save_plot(path, video_times, video_features, pose_times, pose_features,
+              result, window_offsets):
     """Write source, aligned and search-error plots for operator review."""
     import matplotlib
     matplotlib.use('Agg')
     from matplotlib import pyplot as plt
 
+    video_values = np.linalg.norm(
+        np.gradient(video_features, video_times, axis=0), axis=1)
+    pose_values = np.linalg.norm(
+        np.gradient(pose_features, pose_times, axis=0), axis=1)
     aligned = np.interp(
         video_times + result.offset_seconds, pose_times, pose_values)
     video_normalized = (
         video_values - np.mean(video_values)) / np.std(video_values)
     pose_normalized = (aligned - np.mean(aligned)) / np.std(aligned)
-    pose_normalized *= result.direction_sign
     relative_time = video_times - video_times[0]
 
     figure, axes = plt.subplots(2, 1, figsize=(10, 7), constrained_layout=True)
-    axes[0].plot(relative_time, video_normalized, label='ArUco center x')
-    axes[0].plot(relative_time, pose_normalized, label='Aligned Vive motion')
+    axes[0].plot(relative_time, video_normalized, label='ArUco motion energy')
+    axes[0].plot(relative_time, pose_normalized, label='Aligned TCP motion')
     axes[0].set_xlabel('Video time (s)')
     axes[0].set_ylabel('Normalized position')
     axes[0].legend()
@@ -111,10 +126,11 @@ def save_plot(
     axes[1].plot(result.offsets, result.errors)
     axes[1].axvline(result.offset_seconds, color='red', linestyle='--')
     axes[1].set_xlabel('Video-to-pose offset (s)')
-    axes[1].set_ylabel('Normalized MSE')
+    axes[1].set_ylabel('Fused alignment score')
     axes[1].grid(True)
     figure.suptitle(
-        f'offset={result.offset_seconds:.6f}s, MSE={result.mse:.4f}')
+        f'offset={result.offset_seconds:.6f}s, score={result.mse:.4f}, '
+        f'window std={np.std(window_offsets) * 1000:.2f}ms')
     figure.savefig(path, dpi=160)
     plt.close(figure)
 
@@ -130,7 +146,7 @@ def calibrate(args):
     if video_anchor is None:
         raise ValueError('video timing has no first_receive_unix_ns')
     frame_times = video_frame_times(video_path)
-    marker_times, marker_x, decoded_frames = aruco_trajectory(
+    marker_times, marker_features, decoded_frames = aruco_trajectory(
         video_path, frame_times, args.aruco_dictionary, args.marker_id)
     detection_ratio = len(marker_times) / decoded_frames
     if len(marker_times) < args.minimum_detections:
@@ -139,27 +155,50 @@ def calibrate(args):
         raise ValueError('ArUco detection ratio is below the required minimum')
 
     video_absolute_times = marker_times + video_anchor / 1_000_000_000
-    pose_times, positions = read_vive_pose_bag(pose_directory)
-    pose_values, pose_direction = scalar_pose_trajectory(
-        positions, args.pose_axis)
-    pose_motion_metres = float(np.ptp(pose_values))
+    pose_times, positions, orientations = read_vive_pose_bag(pose_directory)
+    marker_features[:, 3] = np.unwrap(marker_features[:, 3])
+    pose_features = np.column_stack((
+        positions, quaternion_rotation_vectors(orientations)))
+    pose_motion_metres = float(np.linalg.norm(np.ptp(positions, axis=0)))
     if pose_motion_metres < args.minimum_pose_motion:
         raise ValueError('Vive calibration motion is too small')
-    result = align_trajectories(
-        video_absolute_times, marker_x, pose_times, pose_values,
+    result = align_feature_trajectories(
+        video_absolute_times, marker_features, pose_times, pose_features,
         minimum_offset=args.minimum_offset,
         maximum_offset=args.maximum_offset,
         step=args.search_step,
         minimum_overlap=args.minimum_overlap,
         ambiguity_exclusion=args.ambiguity_exclusion,
     )
+    window_offsets = []
+    boundaries = np.linspace(
+        0, len(marker_times), args.validation_windows + 1, dtype=int)
+    for start, stop in zip(boundaries[:-1], boundaries[1:]):
+        if stop - start < 12:
+            continue
+        try:
+            window_result = align_feature_trajectories(
+                video_absolute_times[start:stop], marker_features[start:stop],
+                pose_times, pose_features,
+                minimum_offset=args.minimum_offset,
+                maximum_offset=args.maximum_offset,
+                step=args.search_step,
+                minimum_overlap=args.minimum_window_overlap,
+                ambiguity_exclusion=args.ambiguity_exclusion)
+            window_offsets.append(window_result.offset_seconds)
+        except ValueError:
+            continue
+    window_std = (float(np.std(window_offsets))
+                  if len(window_offsets) >= 2 else float('inf'))
     accepted = (
         result.mse <= args.maximum_mse
         and result.uniqueness_margin >= args.minimum_uniqueness_margin
+        and len(window_offsets) >= args.minimum_valid_windows
+        and window_std <= args.maximum_window_std
     )
     output = {
-        'schema_version': 1,
-        'method': 'exumi_style_aruco_trajectory_mse',
+        'schema_version': 2,
+        'method': 'multifeature_aruco_tcp_temporal_alignment_v2',
         'accepted': accepted,
         'offset_convention': OFFSET_CONVENTION,
         'video_to_pose_offset_seconds': result.offset_seconds,
@@ -173,10 +212,12 @@ def calibrate(args):
         'aruco_detections': len(marker_times),
         'decoded_video_frames': decoded_frames,
         'aruco_detection_ratio': detection_ratio,
-        'pose_axis': args.pose_axis,
-        'pose_projection_xyz': pose_direction.tolist(),
-        'pose_direction_sign': result.direction_sign,
+        'video_features': ['center_x', 'center_y', 'log_area', 'angle'],
+        'pose_features': ['x', 'y', 'z', 'rotation_x', 'rotation_y',
+                          'rotation_z'],
         'pose_motion_metres': pose_motion_metres,
+        'window_offsets_seconds': window_offsets,
+        'window_offset_std_seconds': window_std,
         'search': {
             'minimum_offset_seconds': args.minimum_offset,
             'maximum_offset_seconds': args.maximum_offset,
@@ -187,6 +228,8 @@ def calibrate(args):
             'minimum_uniqueness_margin': args.minimum_uniqueness_margin,
             'minimum_detection_ratio': args.minimum_detection_ratio,
             'minimum_pose_motion_metres': args.minimum_pose_motion,
+            'minimum_valid_windows': args.minimum_valid_windows,
+            'maximum_window_std_seconds': args.maximum_window_std,
         },
         'accuracy_note': (
             'This is a software-estimated constant offset. It is not a '
@@ -197,8 +240,8 @@ def calibrate(args):
     output_path.write_text(
         json.dumps(output, indent=2) + '\n', encoding='utf-8')
     save_plot(
-        report_path, video_absolute_times, marker_x,
-        pose_times, pose_values, result)
+        report_path, video_absolute_times, marker_features,
+        pose_times, pose_features, result, window_offsets)
     session = episode.parent.parent
     if (session / 'session.yaml').is_file():
         metadata = read_session(session)
@@ -221,8 +264,6 @@ def argument_parser():
     parser.add_argument('calibration_episode')
     parser.add_argument('--aruco-dictionary', default='DICT_4X4_50')
     parser.add_argument('--marker-id', type=int, default=4)
-    parser.add_argument('--pose-axis', choices=('auto', 'x', 'y', 'z'),
-                        default='auto')
     parser.add_argument('--minimum-offset', type=float, default=-1.0)
     parser.add_argument('--maximum-offset', type=float, default=1.0)
     parser.add_argument('--search-step', type=float, default=0.001)
@@ -234,6 +275,10 @@ def argument_parser():
     parser.add_argument('--maximum-mse', type=float, default=0.5)
     parser.add_argument(
         '--minimum-uniqueness-margin', type=float, default=0.05)
+    parser.add_argument('--validation-windows', type=int, default=3)
+    parser.add_argument('--minimum-valid-windows', type=int, default=2)
+    parser.add_argument('--minimum-window-overlap', type=float, default=0.6)
+    parser.add_argument('--maximum-window-std', type=float, default=0.020)
     return parser
 
 
