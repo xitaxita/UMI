@@ -383,9 +383,10 @@ alignment_report.png
 4. 如果命令失败、`accepted` 为 `false`，或者曲线明显没有对齐，应重新录制
    标定 episode，不要继续使用该结果。
 
-当前版本会计算并保存时间差，但还不会自动修改普通 episode。请保留标定
-记录及其结果，等待后续统一对齐工具使用。标定程序也会把结果路径和状态写入
-本次 session 的 `session.yaml`。
+标定程序会把结果路径和状态写入本次 session 的 `session.yaml`。之后的对齐和
+数据集导出（第 15、16 节）会自动读取其中 accepted 的时间差，不需要手工填写。
+每个 session 都要有自己 accepted 的结果：用 `n` 切换出来的新 session 带有复制
+来的标定录像，但仍需在新 session 里对它运行一次本命令。
 
 ## 13. 录制普通在线 episode
 
@@ -431,8 +432,12 @@ recordings/online_session_<时间>/
 1. 每条 episode 都有 `video.mp4` 和 `pose/`。
 2. `video.mp4` 可以正常播放。
 3. `video.validation.json` 中没有明显失败信息。
-4. `session.yaml` 已登记各条记录，标定目录包含 `time_offset.json` 和
+4. `session.yaml` 已登记各条记录，`task` 不为空（为空时用
+   `set_session_task` 补填，见下文）。
+5. 运行 `calibrate_time`（第 12 节）后，标定目录包含 `time_offset.json` 和
    `alignment_report.png`。
+
+用 `n` 切换过任务时，一次启动会产生多个 session，每个都要按上面检查。
 
 ### 补填或修改 task
 
@@ -454,10 +459,13 @@ ros2 run umi_ros2 set_session_task recordings/online_session_<时间> "pick up t
 
 ## 15. 对齐在线 session
 
-完成采集并获得通过验收的 `time_offset.json` 后，运行普通 Python 对齐工具：
+正式生成数据集时，`build_dataset`（第 16 节）会自动完成对齐，不需要单独运行
+本节命令。本节用于单独检查某个 session 的对齐结果。
+
+完成采集并获得通过验收的 `time_offset.json` 后，运行对齐工具：
 
 ```bash
-python -m umi_ros2.postprocess.align_session \
+ros2 run umi_ros2 align_session \
   recordings/online_session_<时间>
 ```
 
@@ -690,14 +698,29 @@ ros2 launch umi_ros2 vive.launch.py
 4. 确认标定 episode 同时包含视频和 pose。
 5. 重新录制标定 episode，不要手工修改失败结果。
 
+### Ctrl+C 退出时 Vive 报 `KeyboardInterrupt`
+
+按 `Ctrl+C` 结束后，终端可能显示 `vive_pose_node` 的 `KeyboardInterrupt`
+（位于 `simple_close`）和 `process has died ... exit code -2`。这是已知的退出
+问题，只发生在关闭阶段，不影响已保存的视频和 pose 数据。请始终先按 Enter
+结束录制、等到 `episode complete` 后再按 `Ctrl+C`。
+
+### `build_dataset` 失败
+
+错误信息会逐个列出不满足条件的 session 和原因，例如 task 为空、标定不是
+accepted、没有 episode、对齐有效帧不足、图像尺寸或帧率不一致。按提示修正后
+重新运行即可；中间结果保留在 `<output>.partial` 中，可用于检查。
+
 ## 21. 当前限制
 
-- 在线连续 episode 和时间标定仍需 Action 4 真机验收。
-- 正式后处理会自动读取 accepted 时间差并应用到普通 episode；回放显示仍不
-  应用该时间差。
-- 相机内参和相机到 Tracker 的刚性外参尚未完成。
-- 回放尚未自动应用标定得到的 `time_offset.json`。
-- HDF5 和 LeRobot v3 导出已经实现并完成软件级真实数据诊断，但尚未使用
-  accepted 时间差的数据完成训练侧验收；LeRobot 中暂时没有 `action` 字段。
+- 在线连续 episode、`n` 切换 session 和时间标定都已完成软件验证，但仍需
+  Action 4 + Vive 真机验收。
+- `build_dataset` 已用真实标定录像完成软件级合并导出验证，但还没有真实的多任务
+  episode 数据，也没有完成训练侧验收；LeRobot 中暂时没有 `action` 字段。
+- 时间差是每个 session 一个常数，不建模时钟漂移。回放显示不应用时间差，只有
+  对齐和导出会应用。
+- 相机内参和相机到 Tracker 的刚性外参尚未标定。
+- 录制分支不会主动丢帧，但无法证明相机源端没有丢帧
+  （`source_completeness: not_verified`）。
 
 项目当前进度见 [project.md](project.md)。
