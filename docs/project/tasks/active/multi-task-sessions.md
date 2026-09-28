@@ -1,7 +1,7 @@
 # 多任务 session 重构（交接文档）
 
 - **任务标识：** `multi-task-sessions`
-- **状态：** 阶段 1 已完成（软件验证通过）；阶段 2～4 待做
+- **状态：** 阶段 1、2 已完成（软件验证通过）；阶段 3～4 待做
 - **决策来源：** D-021（2026-09-28 已写入 `DECISIONS.md`）
 - **分支：** `feature/multi-task-sessions`
 - **交接日期：** 2026-09-28
@@ -92,6 +92,14 @@ DJI 原始 MP4，并把工作区改动提交为快照。
    `set_session_task` 补填。
 5. 补充测试：v2 字段、v1 兼容、`set_session_task`、launch 合约中的 `task` 参数。
 6. 构建、测试，然后提交。
+
+**阶段 2 结果（2026-09-28）：** 已完成。实现选择写入 D-021 amendment：`set_session_task` 只改顶层
+`task`（并记录 `task_updated_at`），**不改写** recording 中的 task 快照；`status: active` 的 session
+默认拒绝，需 `--force`。未知 `schema_version` 读取时报错。验证：pytest 58/58；改动文件 flake8
+通过；`git diff --check` 通过；构建后 `set_session_task --help`、launch `--show-args` 正常；
+launch 参数替换对 `''`、`123`、`true`、中文、`a: b` 都以字符串传给节点；无相机时运行相机节点，
+能创建带空 task（有警告）和中文 task 的 v2 session；用真实 v1 `session.yaml` 的副本验证升级正确，
+原始数据未改动。
 
 ### 阶段 3：在同一个 launch 里切换 session，并复制标定数据
 

@@ -31,6 +31,23 @@
   independently; sessions are merged only at export. Every export rebuilds the
   dataset from the given session list; there is no incremental append.
 
+### D-021 amendment: `session.yaml` v2 and the `task` field
+
+- **Status:** Implementer choices within D-021, recorded 2026-09-28.
+- `session.yaml` `schema_version` is 2 and carries a top-level string `task`
+  (may be empty). Version 1 files stay readable; a missing `task` means empty.
+  Readers reject unknown future schema versions.
+- The top-level `task` is the only authoritative task for post-processing and
+  export. Each `recordings[]` entry stores a `task` snapshot of the value at the
+  moment it was registered; it is provenance only.
+- `set_session_task` changes only the top-level `task` (plus
+  `task_updated_at`) and upgrades v1 files to v2. It **does not rewrite
+  existing recording snapshots**, so an empty snapshot shows the task was filled
+  in afterwards. It never touches MP4 or MCAP data.
+- `set_session_task` refuses a session whose status is `active` (a running
+  launch may be writing `session.yaml`); `--force` overrides this for sessions
+  left `active` by an interrupted launch.
+
 ## D-020: Define the measured Tracker-to-gripper TCP extrinsic
 
 - **Status:** Accepted on 2026-09-21.

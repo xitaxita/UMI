@@ -18,6 +18,7 @@ from std_srvs.srv import Trigger
 
 from umi_ros2.session.layout import (
     create_online_session,
+    normalize_task,
     now_text,
     register_recording,
     update_session,
@@ -42,6 +43,7 @@ class H264CaptureNode(Node):
         self.declare_parameter('output_path', '')
         self.declare_parameter('episode_mode', False)
         self.declare_parameter('recordings_root', 'recordings')
+        self.declare_parameter('task', '')
         self.declare_parameter('preview_fps', 15.0)
         self.declare_parameter('bitrate_kbps', 12000)
         self.declare_parameter('warmup_seconds', 5.0)
@@ -65,7 +67,17 @@ class H264CaptureNode(Node):
         ).expanduser().resolve()
         self._session_dir = None
         if self._episode_mode:
-            self._session_dir = create_online_session(self._recordings_root)
+            task = normalize_task(self.get_parameter('task').value)
+            self._session_dir = create_online_session(
+                self._recordings_root, task)
+            if task:
+                self.get_logger().info(f'Session task: {task!r}')
+            else:
+                self.get_logger().warning(
+                    'No task given (task:=""). This session has an empty '
+                    'task; fill it in before dataset export with: '
+                    f'ros2 run umi_ros2 set_session_task {self._session_dir} '
+                    '"<task>"')
         self._status_path = (
             (self._session_dir or self._recordings_root)
             / '.online_camera_status.json'

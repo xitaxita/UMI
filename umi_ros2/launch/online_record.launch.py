@@ -36,6 +36,7 @@ def generate_launch_description():
     )
     session_output = LaunchConfiguration('session_output')
     warmup_seconds = LaunchConfiguration('warmup_seconds')
+    task = LaunchConfiguration('task')
     vive = vive_node(paths['vive_config'])
     camera = camera_node(
         paths['camera_config'],
@@ -43,6 +44,7 @@ def generate_launch_description():
             'warmup_seconds': ParameterValue(warmup_seconds, value_type=float),
             'episode_mode': True,
             'recordings_root': session_output,
+            'task': ParameterValue(task, value_type=str),
         },
     )
     return LaunchDescription([
@@ -50,6 +52,12 @@ def generate_launch_description():
             'session_output',
             default_value=default_output,
             description='Parent directory for a new online session',
+        ),
+        DeclareLaunchArgument(
+            'task',
+            default_value='',
+            description='Natural-language task of this session (may be empty '
+                        'and filled in later with set_session_task)',
         ),
         DeclareLaunchArgument(
             'warmup_seconds',

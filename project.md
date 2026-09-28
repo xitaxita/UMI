@@ -6,7 +6,7 @@
 
 DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视频和六自由度位姿，之后校正时间差并生成机器人学习数据。只使用在线采集（相机 USB Webcam）；原离线（microSD）模式已按 D-021 删除。
 
-**进行中：**[多任务 session 重构](docs/project/tasks/active/multi-task-sessions.md)（分支 `feature/multi-task-sessions`）——一个 session 对应一个 task、同一 launch 内切换 session、多 session 合并导出。阶段 1（删除离线采集）已完成并通过软件验证；阶段 2～4 待做。
+**进行中：**[多任务 session 重构](docs/project/tasks/active/multi-task-sessions.md)（分支 `feature/multi-task-sessions`）——一个 session 对应一个 task、同一 launch 内切换 session、多 session 合并导出。阶段 1（删除离线采集）和阶段 2（`session.yaml` v2 与 `task` 字段、`set_session_task`）已完成并通过软件验证；阶段 3～4 待做。
 
 当前已有从在线 raw session 到 HDF5 和原生 LeRobot v3 的完整模块化软件链路；真实 accepted 时间标定、action 语义和训练侧 schema 验收仍待完成。
 
@@ -16,7 +16,7 @@ DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视�
 | --- | --- | --- |
 | Vive 定位 | pysurvive 选取 Tracker；`/vive/pose` 和 `/vive/path` 表示夹爪 TCP，`/tf` 同时发布 `vive_world → vive_tracker` 与 `vive_world → gripper_tcp`；默认发布定时器 90 Hz | 数学组合和软件测试通过；两个 TF 及夹爪末端位置等待用户真机检查 |
 | 在线观察 | `online_view.launch.py` 启动 Vive、Action 4 和 RViz2，不创建正式在线 episode | launch/软件检查通过；设备须处于 Webcam 模式 |
-| 在线采集 | `online_record.launch.py` 创建一个 session；键盘服务可依次录 calibration 和多条 episode | 软件实现与测试通过；新版常驻 pose recorder 尚未完成 Action 4 + Vive 多 episode 真机验收 |
+| 在线采集 | `online_record.launch.py` 创建一个 session（可用 `task:=` 写入该 session 的任务，不填则警告）；键盘服务可依次录 calibration 和多条 episode；`set_session_task` 事后补填/修改 task | 软件实现与测试通过；新版常驻 pose recorder 尚未完成 Action 4 + Vive 多 episode 真机验收 |
 | 在线回放 | `replay.launch.py` 可读取一条 calibration/episode，或按 calibration→episodes 顺序读整个 session；回放预览默认 1280×720，可选原视频 1920×1080 | 1× 无 RViz 进程实测可发布 443/468 帧；RViz 实际画面和整场 session 仍待观察 |
 | 时间差估计 | `generate_aruco_marker` 和多特征 `calibrate_time` 使用 ArUco 中心/尺度/角度与 TCP 平移/旋转估计常量时间差，并检查分段一致性 | 53 项测试通过；一条真实 calibration 得到 -95.01 ms、分段标准差 4.14 ms 并通过软件验收，仍需跨次重复验证 |
 | 逐帧对齐 | `align_session` 用 MP4 真实 PTS、已接受的 offset 和 Vive MCAP 插值得到每帧 pose | 软件测试及零 offset 真实数据诊断通过；尚未以真实 accepted offset 验证 |
@@ -42,7 +42,7 @@ DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视�
 
 ```text
 recordings/online_session_<时间>/
-├── session.yaml                         # 状态、条目索引、标定结果索引
+├── session.yaml                         # schema v2：task、状态、条目索引（含 task 快照）、标定结果索引
 ├── calibration/
 │   └── calibration_001/
 │       ├── video.mp4
@@ -96,7 +96,7 @@ recordings/online_session_<时间>/
 | `urdf_path_diagnostic.launch.py` | 与现有 Vive launch 并行，叠加显示 URDF 与 `/vive/path`；尚未接入真实 URDF，未验收 |
 | `replay.launch.py` | MP4/MCAP 回放节点 + 路径重建节点 + RViz |
 
-`episode_keyboard` 是单独运行的 ROS 服务客户端，不由在线 launch 自动打开终端；`calibrate_time`、`generate_aruco_marker`、`align_session`、`transform_session`、`export_hdf5`、`export_lerobot` 和 `process_session` 都是一次性工具，不启动 ROS graph。仍保留 `compressed_preview_node` 供旧式 JPEG bag 兼容，当前 MP4+MCAP 回放不启动它。
+`episode_keyboard` 是单独运行的 ROS 服务客户端，不由在线 launch 自动打开终端；`calibrate_time`、`generate_aruco_marker`、`align_session`、`transform_session`、`export_hdf5`、`export_lerobot` 、`process_session` 和 `set_session_task` 都是一次性工具，不启动 ROS graph。仍保留 `compressed_preview_node` 供旧式 JPEG bag 兼容，当前 MP4+MCAP 回放不启动它。
 
 ## 本次核对的证据与限制
 
@@ -114,7 +114,7 @@ recordings/online_session_<时间>/
 1. **当前最重要：**用现版 `online_record.launch.py` 连续录两条以上真实 episode，检查各自 MP4 可解码、MCAP 可读、第一帧落入 pose 覆盖，观察预览与录制是否稳定，并检查 `video.validation.json` 的帧间隔。还应做更长时间的 USB/CPU/磁盘/温度测试；目前不能承诺“绝不掉帧”。
 2. 录制真实在线 calibration，运行 `calibrate_time`，人工检查曲线、`accepted` 状态和重复性；再用 accepted offset 跑 `align_session`。可见图像质量、视频时间锚点与姿态对应仍需人工复核。
 3. 验证 Vive TF/path 与 pose 的一致性、遮挡丢失/恢复；确认基站和世界系稳定性。默认 `publish_hz=90` 是发布定时器设置，改成 200 不保证硬件产生 200 Hz 新测量。
-4. 完成[多任务 session 重构](docs/project/tasks/active/multi-task-sessions.md)阶段 2～4：`session.yaml` v2 与 `task` 字段、同一 launch 内 `n` 切换 session 并复制标定原始数据（需真机验收）、`build_dataset` 多 session 合并导出。
+4. 完成[多任务 session 重构](docs/project/tasks/active/multi-task-sessions.md)阶段 3～4：同一 launch 内 `n` 切换 session 并复制标定原始数据（需真机验收）、`build_dataset` 多 session 合并导出。
 5. 真机对比 `vive_world → vive_tracker`、`vive_world → gripper_tcp` 两个 TF，并检查 `/vive/pose`、`/vive/path` 的 TCP 位置与方向。新录制的 pose 已是夹爪 TCP pose，之后在 accepted offset 数据上重新导出并验收 HDF5 与 LeRobot v3，确定任务/action 字段及训练代码期望。相机内参、相机到 Tracker 外参和 Action 4 IMU 记录仍未完成。
 
 ## 资料入口

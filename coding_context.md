@@ -1,5 +1,27 @@
 # UMI — Coding context
 
+## Latest update — multi-task sessions, stage 2: session.yaml v2 + task (2026-09-28)
+
+`session/layout.py` writes `schema_version: 2` with a top-level `task` string
+(stripped, may be empty) right after `session_id`; `register_recording()`
+snapshots the current task into each `recordings[]` entry. `read_session()`
+accepts v1 and v2 and rejects other versions; `session_task()` treats a missing
+v1 task as empty. `set_task()` / the new `set_session_task <session> "<task>"`
+entry point change only the top-level task plus `task_updated_at`, upgrade v1
+to v2, never rewrite recording snapshots, never touch MP4/MCAP, and refuse
+`status: active` sessions unless `--force` (D-021 amendment).
+`online_record.launch.py` declares `task` (default empty) and passes it as
+`ParameterValue(..., value_type=str)` to the camera node's new `task`
+parameter; an empty task logs a warning with the exact fill-in command.
+README documents both methods. Verification: 58/58 pytest, focused flake8,
+`git diff --check`, Jazzy symlink build, installed `set_session_task --help`
+and launch `--show-args`. Launch substitution was evaluated for `''`, `123`,
+`true`, Chinese text and `a: b` (all reach the node as strings). The camera
+node was run without hardware (missing device) and created v2 sessions with
+empty/Chinese tasks and the warning before the expected camera failure. A copy
+of the real v1 `session.yaml` was upgraded correctly; the real recording was
+not modified. Next: stage 3 (`n` session switching and calibration copy).
+
 ## Latest update — multi-task sessions, stage 1: offline mode removed (2026-09-28)
 
 Work is on branch `feature/multi-task-sessions`, following the confirmed plan

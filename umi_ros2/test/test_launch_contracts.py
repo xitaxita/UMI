@@ -37,6 +37,8 @@ def test_online_recorded_topic_contract():
     assert 'camera_node(' in source
     assert "'episode_mode': True" in source
     assert "'recordings_root': session_output" in source
+    assert "'task',\n            default_value=''" in source
+    assert "'task': ParameterValue(task, value_type=str)" in source
     assert 'online_session_' not in source
     assert 'video_timestamps.csv' not in source
     assert "ros2', 'bag', 'record'" not in source

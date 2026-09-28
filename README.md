@@ -221,11 +221,23 @@ v4l2-ctl --list-devices
 
 ## 9. 启动在线采集
 
-在第一个终端运行：
+一个 session 只对应一个任务（task），session 中可以录多条 episode；换任务就
+开新的 session。task 是一句自然语言指令，之后会直接作为 LeRobot 数据集的语言
+task。推荐启动时就用 `task:=` 写明：
+
+```bash
+ros2 launch umi_ros2 online_record.launch.py task:="pick up the red cube and place it in the box"
+```
+
+`task:=` 可以不填：
 
 ```bash
 ros2 launch umi_ros2 online_record.launch.py
 ```
+
+不填时终端会给出黄色警告，并打印补填命令；此时 `session.yaml` 中的
+`task` 为空，导出数据集前必须补上（见下文“补填或修改 task”）。task 只写在
+`session.yaml` 里，session 目录名不包含 task，仍是 `online_session_<时间>`。
 
 系统会启动 Action 4、Vive、常驻 pose recorder 和 RViz2。相机与 pose
 recorder 在本次启动中同时预热一次，默认至少 5 秒。等待 RViz2 中同时出现
@@ -364,6 +376,24 @@ recordings/online_session_<时间>/
 3. `video.validation.json` 中没有明显失败信息。
 4. `session.yaml` 已登记各条记录，标定目录包含 `time_offset.json` 和
    `alignment_report.png`。
+
+### 补填或修改 task
+
+采集结束（launch 已退出）后，用下面的命令补填或修改某个 session 的 task：
+
+```bash
+ros2 run umi_ros2 set_session_task recordings/online_session_<时间> "pick up the red cube"
+```
+
+- 只修改 `session.yaml`（原子写入），不会改动任何 MP4 或 MCAP。
+- 旧版（`schema_version: 1`、没有 `task`）的 session 会同时升级为
+  `schema_version: 2`。
+- 传入 `""` 可以清空 task。
+- 顶层 `task` 是后处理和导出唯一使用的 task。`recordings` 中每条记录的
+  `task` 只是登记当时的快照，这个命令**不会改写**这些快照；快照为空说明
+  task 是事后补填的。
+- `status: active` 的 session 会被拒绝，因为可能还有 launch 正在写入。
+  如果确认 launch 已经异常退出（状态没能改成 `complete`），可以加 `--force`。
 
 ## 15. 对齐在线 session
 
