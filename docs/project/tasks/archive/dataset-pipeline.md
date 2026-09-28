@@ -1,5 +1,7 @@
 # Build the raw-to-dataset pipeline
 
+> **Archived 2026-09-28 (D-022).** Implementation is complete; remaining hardware or real-data acceptance items are tracked in the checklist in `project.md`.
+
 - **Task identity:** `dataset-pipeline`
 - **Status:** HDF5 and LeRobot v3 software-verified; accepted-offset acceptance pending
 - **Decision source:** D-019

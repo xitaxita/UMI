@@ -1,5 +1,7 @@
 # Align video frames to Vive poses
 
+> **Archived 2026-09-28 (D-022).** Implementation is complete; remaining hardware or real-data acceptance items are tracked in the checklist in `project.md`.
+
 - **Task identity:** `align-session`
 - **Status:** Implemented and software-verified; accepted-offset validation pending
 - **Decision source:** D-017

@@ -1,5 +1,7 @@
 # Build the first Vive ROS 2 node
 
+> **Archived 2026-09-28 (D-022).** Implementation is complete; remaining hardware or real-data acceptance items are tracked in the checklist in `project.md`.
+
 - **Task identity:** `vive-ros2-node`
 - **Project and delivery:** UMI, first ROS 2 acquisition delivery
 - **Status:** In progress; live pose is user-verified, while path/TF and robustness acceptance remain.

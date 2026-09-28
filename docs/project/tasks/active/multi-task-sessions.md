@@ -172,6 +172,7 @@ worker 的录制输出路径本来就是每次 start 命令传入，只有状态
    `tasks.parquet` 和 `task_index`。每一帧新增字段 `umi.source_session`；`umi_export.json`
    中列出所有来源 session、task 以及各自的 offset。继续**不生成** `action` 字段。
 5. 保留 `process_session`，作为只处理一个 session 的用法（可以改为调用 `build_dataset` 的内部
+   > 2026-09-28：D-022 已删除 `process_session`，单个 session 也用 `build_dataset`。
    函数），保证老命令仍然可用。
 6. 补充测试：多 session 的 HDF5 合并（编号、task_index 和 tasks 表都正确）；各项检查失败时报出
    正确的原因；单 session 的行为与原来一致。

@@ -1,5 +1,7 @@
 # Replay session or individual recording
 
+> **Archived 2026-09-28 (D-022).** Implementation is complete; remaining hardware or real-data acceptance items are tracked in the checklist in `project.md`.
+
 - **Task identity:** `session-replay`
 - **Status:** Implemented and software-verified; full RViz acceptance pending
 - **Decision source:** D-016

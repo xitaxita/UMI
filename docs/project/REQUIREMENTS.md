@@ -59,5 +59,5 @@ Full online acceptance still requires sustained
 ## Related entries
 
 - [Project board](../../project.md)
-- [Current Vive task](tasks/active/vive-ros2-node.md)
+- [Architecture](ARCHITECTURE.md)
 - [Development decisions](DECISIONS.md)

@@ -1,5 +1,7 @@
 # Design DJI Action 4 acquisition
 
+> **Archived 2026-09-28 (D-022).** Implementation is complete; remaining hardware or real-data acceptance items are tracked in the checklist in `project.md`.
+
 ## Active implementation — D-013
 
 Add repeated episode start/stop without terminating the ROS launch. One camera
