@@ -205,6 +205,30 @@ libsurvive_args: "--force-calibrate"
 
 重新标定完成后，应将它恢复为空字符串。
 
+### Tracker 到夹爪 TCP 的外参
+
+`/vive/pose`、`/vive/path` 和 `gripper_tcp` TF 都是在 Tracker 位姿上叠加一个
+固定外参得到的。这个外参**只写在** `umi_ros2/config/vive.yaml` 中：
+
+```yaml
+tracker_to_tcp_translation_m: [0.0, -0.080371453, 0.194957425]   # 米
+tracker_to_tcp_rotation_xyzw: [0.628736470, -0.628736470, 0.323559039, 0.323559039]
+```
+
+- 节点启动时读取并检查：缺少、个数不对、不是有限数或四元数不是单位长度时，
+  节点直接报错退出，不会用默认值。每个数都要写成带小数点的形式。
+- 重新标定后修改 `vive.yaml` 并重启 Vive 即可（`--symlink-install` 构建时无需
+  重新 build）。启动日志会打印 `Loaded vive_tracker->gripper_tcp extrinsic`。
+- 运行中也可以临时调整，通过检查后下一帧起生效：
+
+```bash
+ros2 param set /vive_pose_node tracker_to_tcp_translation_m "[0.0, -0.08, 0.195]"
+```
+
+  这样修改**不会写回** `vive.yaml`，重启后恢复文件中的值；不合法的值会被拒绝，
+  继续使用原值。平移和旋转是分两次设置的，两次之间会有一帧左右只更新了其中一个，
+  所以不要在录制时调整。
+
 ## 8. 在线采集前准备
 
 1. 用 USB 将 Action 4 连接电脑。

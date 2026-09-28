@@ -12,3 +12,11 @@ vive_pose_node:
     max_path_points: 10000
     publish_hz: 90.0
     publish_tf: true
+    # Measured vive_tracker -> gripper_tcp rigid transform (D-020, D-022).
+    # T maps gripper_tcp coordinates into vive_tracker; ROS XYZW order.
+    # This is the only copy: the node reads it at startup, and
+    # `ros2 param set /vive_pose_node <name> "[...]"` applies a validated
+    # value live (not written back here). Write every number with a decimal
+    # point so ROS reads a double array.
+    tracker_to_tcp_translation_m: [0.0, -0.080371453, 0.194957425]
+    tracker_to_tcp_rotation_xyzw: [0.628736470, -0.628736470, 0.323559039, 0.323559039]

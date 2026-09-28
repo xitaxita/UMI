@@ -24,7 +24,7 @@ DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视�
 | 多 session 数据集 | `build_dataset <session...> --format hdf5/lerobot/both --output <dir>`：每个 session 独立标定/对齐/变换，只在导出时合并；task 取自各自 `session.yaml`；统一检查（task、accepted 标定、episode、对齐、图像尺寸/帧率、contract 版本）任何一项失败都整体失败；每次从头重建，成功后才替换输出 | 83 项测试通过；用真实 1080p calibration 录像复制成两个不同 task 的测试 session，以 accepted -95.01 ms 合并导出 HDF5（2 episodes/2664 样本）和 LeRobot v3，并由 LeRobot 0.4.4 回读 task/task_index/来源正确；尚无真实多任务 episode 数据 |
 | HDF5 数据集导出 | `export_hdf5` 保存逐帧 JPEG、相对 7D pose、帧号和时间戳；格式 v2 起每个 episode 带 `task`/`task_index`/来源 session/offset，根目录 `tasks` 表；`process_session` 串联单个 session 的全部阶段，task 默认取自 `session.yaml` | 真实 session 两条 episode 共 396 样本导出并回读通过（零 offset，2026-09-20）；v2 格式见上行 |
 | LeRobot v3 导出 | `export_lerobot` 使用官方 `LeRobotDataset` API 写 Parquet、MP4 和 metadata；每帧 task 来自所属 session，另有 `umi.source_session`；`build_dataset`/`process_session --format lerobot/both` 用独立环境调用 | 真实 session 两条 episode 共 396 帧导出并由 LeRobot 0.4.4 回读；零 offset 仅验证软件链路，尚无 action 字段 |
-| Tracker→夹爪 TCP 外参 | `gripper_extrinsics.yaml` 和 Vive pose 节点已同步 2026-09-21 重新标定的固定变换；节点在 `/vive/pose`、`/vive/path` 和 TCP TF 前应用它 | 矩阵/四元数数值一致性通过；`/tf` 同时保留原始 Tracker frame 和转换后的 TCP frame，真机方向待重新检查 |
+| Tracker→夹爪 TCP 外参 | 2026-09-21 重新标定的固定变换只写在 `config/vive.yaml`（`tracker_to_tcp_translation_m`、`tracker_to_tcp_rotation_xyzw`）；节点启动时读取并校验（缺失或非单位四元数拒绝启动），运行中可用 `ros2 param set` 动态更新；在 `/vive/pose`、`/vive/path` 和 TCP TF 前应用 | 矩阵/四元数数值一致性通过；`/tf` 同时保留原始 Tracker frame 和转换后的 TCP frame，真机方向待重新检查 |
 
 ## 当前在线采集怎样运行
 

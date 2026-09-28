@@ -126,16 +126,18 @@
 
 ## D-020: Define the measured Tracker-to-gripper TCP extrinsic
 
-- **Status:** Accepted on 2026-09-21.
+- **Status:** Accepted on 2026-09-21; configuration source amended by D-022.
 - The supplied `co2_in_co1.txt` defines co1 as parent `vive_tracker` and co2 as
   child `gripper_tcp`.
 - The transform was remeasured on 2026-09-21. The active value is translation
   `[0.0, -0.080371453, 0.194957425]` metres
   and ROS-order quaternion
   `[0.628736470, -0.628736470, 0.323559039, 0.323559039]` (XYZW).
-- `umi_ros2/config/gripper_extrinsics.yaml` is the canonical configuration.
-  The pose node currently mirrors these values in its active constants, applies
-  them to TCP pose/path, and publishes both raw Tracker and converted TCP TF.
+- Since D-022 the only copy is `vive_pose_node` parameters
+  `tracker_to_tcp_translation_m` / `tracker_to_tcp_rotation_xyzw` in
+  `umi_ros2/config/vive.yaml` (read at startup, validated live updates via
+  `ros2 param set`). The node applies them to TCP pose/path and publishes both
+  raw Tracker and converted TCP TF.
 
 ## D-019: Decoupled raw-to-dataset post-processing pipeline
 
