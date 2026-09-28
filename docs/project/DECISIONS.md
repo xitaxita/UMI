@@ -48,6 +48,29 @@
   launch may be writing `session.yaml`); `--force` overrides this for sessions
   left `active` by an interrupted launch.
 
+### D-021 amendment: in-launch session switching details
+
+- **Status:** Implementer choices within D-021, recorded 2026-09-28.
+- Keyboard `n` + Enter asks for the next task, sets the camera node parameter
+  `next_task`, then calls the `std_srvs/Trigger` service `~/new_session`. While
+  recording, `n` is refused by the keyboard and the recording continues; the
+  service also refuses while recording.
+- Worker status files (`.online_camera_status.json`,
+  `.online_pose_status.json`) move from the session root to one per-launch
+  runtime directory under the system temp directory, removed on shutdown.
+  Every recording already passes its own output paths, so the camera and pose
+  workers are neither restarted nor re-warmed.
+- Only calibrations registered as `complete` in the previous session are
+  copied. Each is copied into a hidden `.calibration_<n>.partial` directory and
+  renamed when complete, so no resolver ever sees a half-copied
+  `calibration_*`. The copy is registered with `copied_from` (provenance only).
+  New calibrations continue numbering after the highest copied number.
+- The switch is all-or-nothing: on any failure the new session directory is
+  removed and the previous session remains active and current. The previous
+  session is marked `complete` only after the new session is fully prepared.
+- `process_session --run-calibration` uses the highest-numbered calibration by
+  default; `--calibration <name|path>` selects one explicitly.
+
 ## D-020: Define the measured Tracker-to-gripper TCP extrinsic
 
 - **Status:** Accepted on 2026-09-21.

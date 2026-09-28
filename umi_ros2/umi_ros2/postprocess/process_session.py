@@ -9,23 +9,42 @@ from types import SimpleNamespace
 from umi_ros2.postprocess.align_session import align
 from umi_ros2.postprocess.export_hdf5 import export_hdf5
 from umi_ros2.postprocess.transform_session import transform
-from umi_ros2.session.layout import read_session
+from umi_ros2.session.layout import (
+    calibration_number,
+    latest_calibration,
+    read_session,
+)
 
 
-def _first_calibration(session):
-    calibration_root = session / 'calibration'
-    candidates = sorted([
-        child for child in calibration_root.iterdir()
-        if child.is_dir() and child.name.startswith('calibration_')
-    ]) if calibration_root.is_dir() else []
-    if not candidates:
-        raise ValueError(f'session contains no calibration episode: {session}')
-    return candidates[0]
+def select_calibration(session, requested=None):
+    """Return the requested calibration, or the newest one by default."""
+    if requested is None:
+        return latest_calibration(session)
+    candidate = Path(requested).expanduser()
+    if not candidate.is_absolute() and len(candidate.parts) == 1:
+        candidate = session / 'calibration' / candidate
+    candidate = candidate.resolve()
+    if (candidate.parent != session / 'calibration'
+            or calibration_number(candidate) is None
+            or not candidate.is_dir()):
+        raise ValueError(
+            f'{requested} is not a calibration_<n> directory of {session}')
+    return candidate
 
 
-def _ensure_calibration(session, run_calibration, offset_seconds):
+def _ensure_calibration(
+        session, run_calibration, offset_seconds, requested=None):
+    if requested is not None:
+        if not run_calibration:
+            raise ValueError('--calibration requires --run-calibration')
+        if offset_seconds is not None:
+            raise ValueError(
+                '--calibration cannot be combined with --offset-seconds')
     metadata = read_session(session)
-    if metadata.get('temporal_calibration', {}).get('status') == 'accepted':
+    accepted = (
+        metadata.get('temporal_calibration', {}).get('status') == 'accepted')
+    # An explicitly chosen calibration is always re-run.
+    if accepted and requested is None:
         return
     if offset_seconds is not None:
         return
@@ -37,7 +56,8 @@ def _ensure_calibration(session, run_calibration, offset_seconds):
         argument_parser as calibration_argument_parser,
         calibrate,
     )
-    calibration = _first_calibration(session)
+    calibration = select_calibration(session, requested)
+    print(f'running temporal calibration on {calibration}')
     calibration_args = calibration_argument_parser().parse_args([
         str(calibration),
     ])
@@ -51,7 +71,9 @@ def process(args):
     session = Path(args.session).expanduser().resolve()
     if not (session / 'session.yaml').is_file():
         raise ValueError(f'input is not a session: {session}')
-    _ensure_calibration(session, args.run_calibration, args.offset_seconds)
+    _ensure_calibration(
+        session, args.run_calibration, args.offset_seconds,
+        getattr(args, 'calibration', None))
     output_root = (
         Path(args.output).expanduser().resolve()
         if args.output else
@@ -121,7 +143,12 @@ def argument_parser():
     parser.add_argument('--output', help='Processing output root')
     parser.add_argument(
         '--run-calibration', action='store_true',
-        help='Run the first calibration episode when no offset is accepted')
+        help='Run calibrate_time when no offset is accepted (on the newest '
+             'calibration unless --calibration is given)')
+    parser.add_argument(
+        '--calibration',
+        help='calibration_<n> name or path to (re)run with '
+             '--run-calibration, even if an offset is already accepted')
     parser.add_argument(
         '--offset-seconds', type=float,
         help='Diagnostic offset override; does not mark calibration accepted')

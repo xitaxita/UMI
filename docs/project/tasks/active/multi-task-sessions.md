@@ -1,7 +1,7 @@
 # 多任务 session 重构（交接文档）
 
 - **任务标识：** `multi-task-sessions`
-- **状态：** 阶段 1、2 已完成（软件验证通过）；阶段 3～4 待做
+- **状态：** 阶段 1～3 已完成（软件验证通过）；阶段 3 待真机验收；阶段 4 待做
 - **决策来源：** D-021（2026-09-28 已写入 `DECISIONS.md`）
 - **分支：** `feature/multi-task-sessions`
 - **交接日期：** 2026-09-28
@@ -137,6 +137,16 @@ launch 参数替换对 `''`、`123`、`true`、中文、`a: b` 都以字符串�
    时不留下半个目录）；没有标定可复制的情况；复制链传递；新旧 calibration 的编号和默认选择。
 6. 构建、测试，然后提交。**需要用户用真机验收**：在同一个 launch 中连续切换两到三个 session，
    每个 session 都录几条 episode，并检查各 session 的目录和 `session.yaml`。
+
+**阶段 3 结果（2026-09-28）：** 已实现，软件已验证，**真机未验收**。实现细节写入 D-021 第二条
+amendment。“需要先核实”各项的结论：`episode_keyboard` 原本只用三个 `std_srvs/Trigger` 服务；两个
+worker 的录制输出路径本来就是每次 start 命令传入，只有状态文件写死在 session 根目录，现已移到
+每次 launch 的临时目录；回放 resolver 按 `calibration_*` 名称和数字顺序列出条目，复制来的标定
+可以正常回放，隐藏的 `.partial` 目录不会被识别。验证：pytest 70/70（新增 `test_session_switch.py`：
+录制中拒绝、复制清单与派生结果排除、中途失败回滚、隐藏临时目录、无标定、复制链、编号与默认
+选择、`--calibration` 参数检查、键盘 `n` 录制中不停止）；改动文件 flake8、`git diff --check`、
+构建通过；另用真实节点 + 两个真实 worker + `videotestsrc` + 合成 `/vive/pose` 做了端到端运行
+（见 `coding_context.md`）。注意：复制在服务回调中同步进行，复制大文件时 RViz 预览会暂停。
 
 ### 阶段 4：多 session 合并导出
 

@@ -1,5 +1,33 @@
 # UMI — Coding context
 
+## Latest update — multi-task sessions, stage 3: in-launch `n` switching (2026-09-28)
+
+`episode_keyboard` `n` + Enter (idle only; refused without stopping while
+recording) prompts for a task, sets camera parameter `next_task` through
+`/action4_h264_capture_node/set_parameters`, then calls the new Trigger
+service `~/new_session`. The node refuses while recording, otherwise calls
+`layout.switch_session()`: create the new v2 session, `copy_calibration_raw()`
+(complete calibrations only; raw `video.mp4`, `video.timing.json`,
+`video.validation.json`, `pose/`; staged in hidden `.calibration_<n>.partial`,
+renamed, registered with provenance-only `copied_from`), and only then mark
+the old session `complete`. Any failure removes the new session and keeps the
+old one. Episode numbering restarts; calibration numbering continues after
+the highest copy; `next_task` is reset after each request. Worker status files
+moved to a per-launch `tempfile.mkdtemp('umi_online_runtime_')` directory
+(removed in `close()`), so workers never restart. `process_session
+--run-calibration` now uses `latest_calibration()` (numeric order) and accepts
+`--calibration`, which requires `--run-calibration` and always re-runs.
+`rcl_interfaces` added to package.xml. Choices recorded in the second D-021
+amendment. Verification: 70/70 pytest, focused flake8, `git diff --check`,
+Jazzy build. A scratch end-to-end run drove the real node, both real workers,
+`videotestsrc` (`test_source`) and a synthetic `/vive/pose` publisher: switch
+refused mid-recording; two switches produced three sessions with correct
+tasks/status, chained copies (`calibration_001`, then `001`+`002`),
+`calibration_002` numbering, decodable 33-frame MP4s, a copied 300-pose MCAP,
+replay order calibration_001, calibration_002, episode_0001, and runtime dir
+cleanup. The service copies synchronously inside the executor, so preview
+publishing pauses during a large copy. **Hardware acceptance pending.**
+
 ## Latest update — multi-task sessions, stage 2: session.yaml v2 + task (2026-09-28)
 
 `session/layout.py` writes `schema_version: 2` with a top-level `task` string

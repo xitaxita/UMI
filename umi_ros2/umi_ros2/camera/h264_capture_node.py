@@ -1,15 +1,18 @@
 """Encode Action 4 MJPEG into H.264 MP4 with a disposable ROS preview."""
 
 import json
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image
@@ -17,10 +20,14 @@ from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 
 from umi_ros2.session.layout import (
+    calibration_number,
     create_online_session,
     normalize_task,
     now_text,
+    read_session,
     register_recording,
+    session_task,
+    switch_session,
     update_session,
 )
 
@@ -44,6 +51,7 @@ class H264CaptureNode(Node):
         self.declare_parameter('episode_mode', False)
         self.declare_parameter('recordings_root', 'recordings')
         self.declare_parameter('task', '')
+        self.declare_parameter('next_task', '')
         self.declare_parameter('preview_fps', 15.0)
         self.declare_parameter('bitrate_kbps', 12000)
         self.declare_parameter('warmup_seconds', 5.0)
@@ -66,25 +74,23 @@ class H264CaptureNode(Node):
             str(self.get_parameter('recordings_root').value)
         ).expanduser().resolve()
         self._session_dir = None
+        self._runtime_dir = None
         if self._episode_mode:
-            task = normalize_task(self.get_parameter('task').value)
             self._session_dir = create_online_session(
-                self._recordings_root, task)
-            if task:
-                self.get_logger().info(f'Session task: {task!r}')
-            else:
-                self.get_logger().warning(
-                    'No task given (task:=""). This session has an empty '
-                    'task; fill it in before dataset export with: '
-                    f'ros2 run umi_ros2 set_session_task {self._session_dir} '
-                    '"<task>"')
+                self._recordings_root,
+                normalize_task(self.get_parameter('task').value))
+            self._log_session_task()
+            # Worker status outlives any one session, so it is kept per
+            # launch rather than inside a session directory.
+            self._runtime_dir = Path(
+                tempfile.mkdtemp(prefix='umi_online_runtime_'))
         self._status_path = (
-            (self._session_dir or self._recordings_root)
+            (self._runtime_dir or self._recordings_root)
             / '.online_camera_status.json'
         )
         self._pose_status_path = (
-            self._session_dir / '.online_pose_status.json'
-            if self._session_dir is not None else None
+            self._runtime_dir / '.online_pose_status.json'
+            if self._runtime_dir is not None else None
         )
         self._base_config = {
             'device': str(self.get_parameter('video_device').value),
@@ -129,9 +135,71 @@ class H264CaptureNode(Node):
                 Trigger, '~/start_calibration', self._start_calibration)
             self._stop_service = self.create_service(
                 Trigger, '~/stop_episode', self._stop_episode)
+            self._new_session_service = self.create_service(
+                Trigger, '~/new_session', self._new_session)
             self.get_logger().info(
                 f'Online session ready at {self._session_dir}; use '
-                'start_episode/start_calibration and stop_episode services')
+                'start_episode/start_calibration, stop_episode and '
+                'new_session services')
+
+    def _log_session_task(self):
+        """Report the current session task, warning when it is empty."""
+        task = session_task(read_session(self._session_dir))
+        if task:
+            self.get_logger().info(
+                f'Session {self._session_dir.name} task: {task!r}')
+            return
+        self.get_logger().warning(
+            f'Session {self._session_dir.name} has an empty task. Fill it in '
+            'before dataset export with: ros2 run umi_ros2 set_session_task '
+            f'{self._session_dir} "<task>"')
+
+    def _new_session(self, request, response):
+        """Close this session and open the next one without restarting."""
+        if self._episode_dir is not None:
+            response.success = False
+            response.message = (
+                f'cannot switch session while recording {self._episode_dir}; '
+                'stop the recording first')
+            return response
+        task = normalize_task(self.get_parameter('next_task').value)
+        previous = self._session_dir
+        try:
+            session, copied = switch_session(
+                previous, self._recordings_root, task)
+        except Exception as error:  # noqa: B902 - report, keep old session
+            response.success = False
+            response.message = (
+                f'session switch failed, still using {previous}: {error}')
+            self.get_logger().error(response.message)
+            return response
+        finally:
+            # A task is used for exactly one switch request.
+            self.set_parameters([
+                Parameter('next_task', Parameter.Type.STRING, '')])
+        self._session_dir = session
+        self._episode_number = 0
+        self._calibration_number = max(
+            (calibration_number(path) for path in copied), default=0)
+        self.get_logger().info(
+            f'Session {previous.name} complete; now recording into '
+            f'{session}')
+        self._log_session_task()
+        if copied:
+            names = ', '.join(path.name for path in copied)
+            calibration_note = (
+                f'copied raw calibration {names}; run calibrate_time in this '
+                f'session (newest: {copied[-1].name})')
+            self.get_logger().info(f'Session switch: {calibration_note}')
+        else:
+            calibration_note = (
+                'this session has no calibration data; record one '
+                '(c + Enter)')
+            self.get_logger().warning(f'Session switch: {calibration_note}')
+        response.success = True
+        response.message = (
+            f'new session {session} (task {task!r}); {calibration_note}')
+        return response
 
     def _start_worker(self, output_path):
         """Start the one persistent preview and episode-recording worker."""
@@ -445,6 +513,8 @@ class H264CaptureNode(Node):
         if self._session_dir is not None:
             update_session(
                 self._session_dir, status='complete', ended_at=now_text())
+        if self._runtime_dir is not None:
+            shutil.rmtree(self._runtime_dir, ignore_errors=True)
 
     def _write_validation(self, return_code):
         """Validate the finalized video and combine worker timing facts."""

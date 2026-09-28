@@ -255,6 +255,9 @@ ros2 run umi_ros2 episode_keyboard
 - 在等待状态输入 `c` 后按 Enter：开始一条专用标定记录。
 - 再按 Enter：结束并保存当前 episode。
 - 再按 Enter：开始下一条新 episode。
+- 在等待状态输入 `n` 后按 Enter：结束当前 session，开始一个新 session（换
+  任务）。程序会提示输入新 task，直接回车则 task 为空（之后用
+  `set_session_task` 补填）。详见下文“在同一次启动中切换任务”。
 - 输入 `q` 后按 Enter：只退出按键控制器，不停止整个系统。
 - 在 Launch 终端按 `Ctrl+C`：结束整个在线系统。
 
@@ -264,6 +267,34 @@ ros2 run umi_ros2 episode_keyboard
 状态下，每条记录仍写入自己目录内独立的 `video.mp4` 和 `pose/`。开始时先
 确认新 pose bag 已写入第一条 pose，再开始写视频。切换 episode 不会重启或
 重新预热相机和 pose recorder。
+
+### 在同一次启动中切换任务
+
+换任务时有两种方式，得到的 session 结构完全一样：
+
+1. **不重启**：在按键控制器的等待状态输入 `n` 并回车，再输入新任务的
+   task。相机、Vive 和 pose 订阅都不重启、不重新预热。
+2. **重启**：在 Launch 终端按 `Ctrl+C`，再用新的 `task:=` 重新启动。
+
+按 `n` 切换时：
+
+- 正在录制时不能切换：按键控制器会提示“Recording continues”，录制继续，
+  需要先按 Enter 结束录制。
+- 旧 session 标记为 `complete`；新建 `online_session_<时间>/`，episode 编号
+  从 `episode_0001` 重新开始。
+- 旧 session 中所有已完成的标定录制会把**原始数据**（`video.mp4`、
+  `video.timing.json`、`video.validation.json`、`pose/`）按原编号复制到新
+  session，并在 `session.yaml` 中用 `copied_from` 注明来源（仅供追溯）。
+  `time_offset.json`、`alignment_report.png` 等结果**不会复制**，新 session
+  的标定状态为 `not_calibrated`，需要在新 session 里重新运行
+  `calibrate_time`（见第 12 节）。因为复制会一直传下去，一次启动中只需要录
+  一次标定。
+- 如果旧 session 没有标定数据，终端会提示本 session 没有标定，需要录一条。
+- 在新 session 里再录标定时，编号接着往下排（例如 `calibration_002`）。
+- 复制期间命令会等待，复制完成之前不会开始新的录制。复制失败时不会留下
+  新 session，程序继续使用旧 session。
+
+用 `Ctrl+C` 重启时不会复制任何标定，必须重新录制标定。
 
 ## 10. 生成时间标定图案
 
@@ -292,8 +323,9 @@ Launch 持续运行期间，普通 episode 不需要重复标定。
 6. 移动过程中保持标记完整可见，避免手遮挡标记。
 7. 再次保持静止约 2 秒。
 8. 按 Enter 结束，并等待 `calibration complete`。
-9. 记下刚生成的 `online_session_<时间>/calibration/calibration_001`
-   目录名称。
+9. 记下刚生成的 `online_session_<时间>/calibration/calibration_<编号>`
+   目录名称（本 session 的第一条标定通常是 `calibration_001`；如果是用 `n`
+   切换来的 session，已有复制来的标定，新录的编号会接着往下排）。
 
 移动时应有明显转折，但不要快到画面严重模糊。当前标定器会同时利用标记的
 水平/垂直中心、面积和画面内角度，以及 TCP 的三维平移和旋转；建议动作同时
@@ -309,7 +341,8 @@ ros2 run umi_ros2 calibrate_time \
   recordings/online_session_<时间>/calibration/calibration_001
 ```
 
-将目录替换为刚才的真实标定 episode。完成后，该目录会增加：
+将目录替换为刚才的真实标定 episode；用 `n` 切换来的 session 则对复制来的
+标定目录运行同样的命令。完成后，该目录会增加：
 
 ```text
 time_offset.json
@@ -342,7 +375,7 @@ alignment_report.png
 6. 检查终端没有相机、Vive 或写盘错误。
 7. 整理下一次场景，然后重复以上步骤。
 
-一次在线 Launch 的完整数据结构为：
+一个 session 的完整数据结构为（一次启动中用 `n` 切换会依次产生多个这样的 session）：
 
 ```text
 recordings/online_session_<时间>/
@@ -435,8 +468,9 @@ ros2 run umi_ros2 process_session \
 ```
 
 如果 `session.yaml` 还没有 accepted 标定结果，可以加
-`--run-calibration`，程序会先处理编号最小的 calibration；标定不通过时流程
-会停止，不会继续生成正式数据。`--offset-seconds` 仅供诊断，不能代替正式标定。
+`--run-calibration`，程序会先处理编号最大（最新）的 calibration；如需指定，
+再加 `--calibration calibration_<编号>`（显式指定时即使已有 accepted 结果也会
+重新运行）。标定不通过时流程会停止，不会继续生成正式数据。`--offset-seconds` 仅供诊断，不能代替正式标定。
 
 默认输出结构：
 
