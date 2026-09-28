@@ -13,6 +13,7 @@ from umi_ros2.session.layout import (
     calibration_number,
     latest_calibration,
     read_session,
+    session_task,
 )
 
 
@@ -74,6 +75,9 @@ def process(args):
     _ensure_calibration(
         session, args.run_calibration, args.offset_seconds,
         getattr(args, 'calibration', None))
+    # D-021: the session's own task, unless explicitly overridden.
+    task = args.task if args.task is not None else session_task(
+        read_session(session))
     output_root = (
         Path(args.output).expanduser().resolve()
         if args.output else
@@ -102,7 +106,7 @@ def process(args):
     if args.format in ('hdf5', 'both'):
         export_result = export_hdf5(SimpleNamespace(
             input_path=str(transformed_root), output=str(dataset_path),
-            task=args.task, jpeg_quality=args.jpeg_quality,
+            task=task, jpeg_quality=args.jpeg_quality,
             overwrite=args.overwrite,
         ))
         if export_result != 0:
@@ -111,7 +115,7 @@ def process(args):
         if not args.repo_id:
             raise ValueError('--repo-id is required for LeRobot export')
         lerobot_python = Path(
-            args.lerobot_python).expanduser().resolve()
+            args.lerobot_python).expanduser().absolute()
         if not lerobot_python.is_file():
             raise ValueError(
                 f'LeRobot Python interpreter not found: {lerobot_python}')
@@ -119,7 +123,7 @@ def process(args):
             str(lerobot_python), '-m',
             'umi_ros2.postprocess.export_lerobot',
             str(transformed_root), '--output', str(lerobot_path),
-            '--repo-id', args.repo_id, '--task', args.task,
+            '--repo-id', args.repo_id, '--task', task,
             '--fps', str(args.fps), '--video-codec', args.video_codec,
         ]
         if args.overwrite:
@@ -154,7 +158,10 @@ def argument_parser():
         help='Diagnostic offset override; does not mark calibration accepted')
     parser.add_argument('--maximum-pose-gap', type=float, default=0.1)
     parser.add_argument('--minimum-valid-ratio', type=float, default=0.95)
-    parser.add_argument('--task', default='')
+    parser.add_argument(
+        '--task', default=None,
+        help='Override the task stored in session.yaml (single session; '
+             'use build_dataset to merge sessions)')
     parser.add_argument(
         '--format', choices=('hdf5', 'lerobot', 'both'), default='hdf5')
     parser.add_argument('--repo-id', help='LeRobot owner/dataset identifier')

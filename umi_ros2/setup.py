@@ -47,6 +47,7 @@ setup(
             'export_hdf5 = umi_ros2.postprocess.export_hdf5:main',
             'export_lerobot = umi_ros2.postprocess.export_lerobot:main',
             'process_session = umi_ros2.postprocess.process_session:main',
+            'build_dataset = umi_ros2.postprocess.build_dataset:main',
             'set_session_task = '
             'umi_ros2.session.set_session_task:main',
         ],

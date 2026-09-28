@@ -2,13 +2,20 @@
 
 import argparse
 import json
-import re
 from pathlib import Path
 
 import numpy as np
 
+from .dataset_plan import (
+    read_transformed_item,
+    session_summary,
+    sources_for_root,
+    task_table,
+)
 
-FORMAT_VERSION = 1
+
+# Version 2 (D-021): per-episode task/source attributes and a root task table.
+FORMAT_VERSION = 2
 
 
 def _h5py():
@@ -29,42 +36,6 @@ def _cv2():
             'HDF5 image export requires OpenCV; install python3-opencv and '
             'create the venv with --system-site-packages') from error
     return cv2
-
-
-def _natural_key(path):
-    return [
-        int(part) if part.isdigit() else part
-        for part in re.split(r'(\d+)', path.name)
-    ]
-
-
-def resolve_transformed_items(input_path):
-    """Resolve one transformed item or a transformed session root."""
-    path = Path(input_path).expanduser().resolve()
-    if (path / 'episode_frames.npz').is_file():
-        return [path]
-    if not (path / 'transform_summary.json').is_file():
-        raise ValueError('input has no transform_summary.json')
-    episodes = path / 'episodes'
-    items = sorted([
-        child for child in episodes.iterdir()
-        if child.is_dir() and (child / 'episode_frames.npz').is_file()
-    ], key=_natural_key) if episodes.is_dir() else []
-    if not items:
-        raise ValueError(f'transformed input contains no episodes: {path}')
-    return items
-
-
-def _read_item(item):
-    report = json.loads(
-        (item / 'transform.json').read_text(encoding='utf-8'))
-    with np.load(item / 'episode_frames.npz') as values:
-        arrays = {name: values[name].copy() for name in values.files}
-    version = int(np.asarray(arrays['contract_version']).item())
-    if version != FORMAT_VERSION:
-        raise ValueError(
-            f'unsupported episode contract version {version}: {item}')
-    return report, arrays
 
 
 def _video_shape(video_path):
@@ -126,9 +97,10 @@ def _write_video_frames(group, video_path, frame_count, selected_indices,
     images.attrs['source_video'] = str(video_path)
 
 
-def export_item(parent, item, episode_index, jpeg_quality=95):
+def export_item(parent, source, episode_index, task_index, jpeg_quality=95):
     """Write one transformed episode group and return its sample count."""
-    report, arrays = _read_item(item)
+    item = Path(source.item)
+    report, arrays = read_transformed_item(item)
     valid = np.asarray(arrays['valid'], dtype=bool)
     selected = np.flatnonzero(valid)
     if not len(selected):
@@ -141,7 +113,13 @@ def export_item(parent, item, episode_index, jpeg_quality=95):
         raise ValueError(f'source video does not exist: {video_path}')
 
     group = parent.create_group(f'episode_{episode_index:04d}')
-    group.attrs['source_episode'] = report.get('source_episode') or ''
+    group.attrs['task'] = source.task
+    group.attrs['task_index'] = task_index
+    group.attrs['source_session'] = source.source_session
+    group.attrs['source_episode'] = source.source_episode
+    group.attrs['video_to_pose_offset_seconds'] = (
+        np.nan if source.video_to_pose_offset_seconds is None
+        else float(source.video_to_pose_offset_seconds))
     group.attrs['source_video'] = str(video_path)
     group.attrs['reference_definition'] = report['reference_definition']
     group.attrs['source_frame_count'] = len(valid)
@@ -173,43 +151,63 @@ def export_item(parent, item, episode_index, jpeg_quality=95):
     return len(selected)
 
 
-def export_hdf5(args):
-    """Export all transformed episodes into one HDF5 file."""
+def write_hdf5(output, sources, jpeg_quality=95, overwrite=False,
+               source_description=''):
+    """Export planned episodes from one or more sessions into one file."""
     h5py = _h5py()
-    items = resolve_transformed_items(args.input_path)
-    output = Path(args.output).expanduser().resolve()
-    if output.exists() and not args.overwrite:
+    if not sources:
+        raise ValueError('no episodes to export')
+    output = Path(output).expanduser().resolve()
+    if output.exists() and not overwrite:
         raise FileExistsError(
             f'output already exists; use --overwrite: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + '.partial')
     if temporary.exists():
         temporary.unlink()
+    tasks = task_table(sources)
+    sessions = session_summary(sources)
     try:
         with h5py.File(temporary, 'w') as dataset:
             dataset.attrs['format'] = 'umi_hdf5'
             dataset.attrs['format_version'] = FORMAT_VERSION
             dataset.attrs['coordinate_frame'] = 'episode_start_pose'
             dataset.attrs['pose_layout'] = 'x y z qx qy qz qw'
-            dataset.attrs['task'] = args.task
-            dataset.attrs['source_transformed_root'] = str(
-                Path(args.input_path).expanduser().resolve())
+            dataset.attrs['source'] = source_description
+            dataset.attrs['source_sessions'] = json.dumps(
+                sessions, ensure_ascii=False)
+            dataset.attrs['session_count'] = len(sessions)
+            table = dataset.create_dataset(
+                'tasks', data=np.array(tasks, dtype=object),
+                dtype=h5py.string_dtype(encoding='utf-8'))
+            table.attrs['description'] = (
+                'task string indexed by the episode task_index attribute')
             episodes = dataset.create_group('episodes')
             counts = []
-            for index, item in enumerate(items):
+            for index, source in enumerate(sources):
                 count = export_item(
-                    episodes, item, index, args.jpeg_quality)
+                    episodes, source, index, tasks.index(source.task),
+                    jpeg_quality)
                 counts.append(count)
-                print(f'{item.name}: exported {count} samples')
+                print(f'episode_{index:04d} <- {source.source_session}/'
+                      f'{Path(source.item).name}: exported {count} samples')
             dataset.attrs['episode_count'] = len(counts)
             dataset.attrs['sample_count'] = sum(counts)
         temporary.replace(output)
-    except Exception:
+    except BaseException:
         if temporary.exists():
             temporary.unlink()
         raise
     print(f'HDF5 dataset -> {output}')
     return 0
+
+
+def export_hdf5(args):
+    """Export all episodes of one transformed root with one task."""
+    root = Path(args.input_path).expanduser().resolve()
+    return write_hdf5(
+        args.output, sources_for_root(root, args.task),
+        args.jpeg_quality, args.overwrite, str(root))
 
 
 def argument_parser():
@@ -218,7 +216,10 @@ def argument_parser():
         description='Export transformed UMI episodes to HDF5')
     parser.add_argument('input_path', help='Transformed session or episode')
     parser.add_argument('--output', required=True, help='Output .hdf5 file')
-    parser.add_argument('--task', default='', help='Task description metadata')
+    parser.add_argument(
+        '--task', default='',
+        help='Task for every episode of this one transformed root; use '
+             'build_dataset to merge sessions with their own tasks')
     parser.add_argument('--jpeg-quality', type=int, default=95)
     parser.add_argument('--overwrite', action='store_true')
     return parser

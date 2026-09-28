@@ -83,6 +83,9 @@ def transform_item(item, destination, overwrite=False):
         'source_aligned_directory': str(item),
         'source_episode': alignment.get('source_episode'),
         'source_video': alignment.get('source_video'),
+        'video_to_pose_offset_seconds': alignment.get(
+            'video_to_pose_offset_seconds'),
+        'offset_source': alignment.get('offset_source'),
         'frame_count': len(transformed.frame_index),
         'valid_frame_count': int(np.count_nonzero(transformed.valid)),
         'reference_definition': 'first_valid_aligned_video_frame_pose',

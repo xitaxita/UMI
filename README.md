@@ -458,12 +458,67 @@ processed/online_session_<时间>/
 
 ## 16. 生成 episode 相对坐标、HDF5 或 LeRobot v3 数据集
 
-正式处理已经通过验收时间差的在线 session 时，直接运行完整流程：
+### 多个 session 合并成一个数据集（推荐）
+
+每个 session 对应一个任务。用 `build_dataset` 可以把多个 session（可以是不同
+任务）合并成同一个数据集：
+
+```bash
+ros2 run umi_ros2 build_dataset \
+  recordings/online_session_<时间1> recordings/online_session_<时间2> \
+  --format both --repo-id local/umi_demo \
+  --output datasets/umi_demo
+```
+
+- 输入可以是具体的 session 目录，也可以是包含多个 session 的目录（例如整个
+  `recordings/`，按目录名即时间顺序处理）。
+- task 从各自的 `session.yaml` 读取，没有 `--task` 参数。
+- 每个 session 独立完成标定、对齐和坐标变换，只在导出这一步合并；不会跨
+  session 使用标定结果。
+- 每次运行都会按给定的 session 列表**从头重建**，不做增量追加。先在
+  `<output>.partial` 中生成，全部成功后才替换 `<output>`；已存在的输出需要加
+  `--overwrite`，且只会替换之前由 `build_dataset` 生成（含
+  `build_manifest.json`）的目录。
+- `--run-calibration`：对还没有 accepted 标定的 session，用它**编号最大（最新）**
+  的一条 calibration 现场运行 `calibrate_time`；已经 accepted 的 session 直接用
+  自己的结果。
+- 帧率从视频的真实帧间隔测得，LeRobot 使用该帧率。
+
+导出前会做统一检查，任何一项不满足都会**整体失败**，并指出是哪个 session、
+什么原因：task 不为空；标定为 accepted；至少有一条普通 episode；每条 episode
+对齐结果为 accepted；所有 episode 的图像尺寸和帧率一致；中间结果的 contract
+版本一致。失败时中间结果保留在 `<output>.partial` 中便于检查。
+
+输出结构：
+
+```text
+datasets/umi_demo/
+├── build_manifest.json            # 来源 session、task、offset、帧率等
+├── processed/
+│   ├── dataset_plan.json          # 导出计划（episode → task / 来源）
+│   └── online_session_<时间>/
+│       ├── aligned/
+│       └── transformed/
+├── dataset.hdf5                   # 选择 hdf5/both 时生成
+└── lerobot/                       # 选择 lerobot/both 时生成
+```
+
+HDF5（`format_version` 2）中 episode 在整个数据集中统一编号
+（`episode_0000`…），每个 episode 组的属性包括 `task`、`task_index`、
+`source_session`、`source_episode` 和 `video_to_pose_offset_seconds`；根目录的
+`tasks` 数据集按 `task_index` 存放 task 字符串（按首次出现顺序），根目录不再有
+单一的 `task` 属性。LeRobot v3 中每帧的 `task` 来自所属 session，LeRobot 自动
+生成 `tasks.parquet` 和 `task_index`；每帧另有 `umi.source_session`；
+`umi_export.json` 列出所有来源 session、task 和各自的 offset。
+
+### 只处理一个 session
+
+`process_session` 仍可处理单个 session，task 默认读取 `session.yaml`
+（`--task` 只用于临时覆盖）：
 
 ```bash
 ros2 run umi_ros2 process_session \
   recordings/online_session_<时间> \
-  --task "任务描述" \
   --format hdf5
 ```
 
@@ -503,12 +558,11 @@ PTS 和 pose 查询时间。可以用 `--jpeg-quality` 调整图像压缩质量�
 ```bash
 ros2 run umi_ros2 process_session \
   recordings/online_session_<时间> \
-  --task "任务描述" \
   --format both \
   --repo-id local/umi_demo
 ```
 
-只生成 LeRobot 时使用 `--format lerobot`。默认会调用
+`build_dataset` 与 `process_session` 的 LeRobot 选项相同。只生成 LeRobot 时使用 `--format lerobot`。默认会调用
 `~/umi_lerobot_venv312/bin/python`；环境在其他位置时增加
 `--lerobot-python /实际路径/bin/python`。LeRobot 输出使用官方 v3 API，图像
 保存为视频，状态为 episode 起点坐标系下的

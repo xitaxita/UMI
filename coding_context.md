@@ -1,5 +1,43 @@
 # UMI — Coding context
 
+## Latest update — multi-task sessions, stage 4: `build_dataset` (2026-09-28)
+
+New `postprocess/build_dataset.py` (entry point `build_dataset`) merges any
+list of sessions / directories of sessions. Each session uses its own accepted
+calibration (`--run-calibration` runs the newest calibration only where none
+is accepted), then real `align` and `transform` into
+`<out>.partial/processed/<session>/`; everything is exported together and
+`<out>.partial` replaces `<out>` only on success (`--overwrite` only replaces
+a directory holding `build_manifest.json`; outputs overlapping a raw session
+are refused). Pre-checks and post-transform checks fail the whole build with
+session + reason (empty task, not accepted, no episodes, rejected/failed
+alignment, image size or frame rate mismatch, contract version). Frame rate is
+the median real PTS interval (OpenCV `CAP_PROP_FPS` reported 29.969 on the
+real 30 fps file). New NumPy-only `postprocess/dataset_plan.py`
+(`EpisodeSource`, `task_table`, plan JSON with paths relative to the plan)
+feeds both exporters. HDF5 `format_version` 2: global `episode_0000…`,
+per-episode `task`, `task_index`, `source_session`, `source_episode`,
+`video_to_pose_offset_seconds`; root `tasks` string dataset, no root `task`.
+LeRobot `FORMAT_VERSION` 2: per-frame session task, `umi.source_session`
+string feature, `umi_export.json` lists sessions/tasks/offsets/episodes; still
+no `action`. `transform.json` now also carries the alignment offset.
+`process_session` task defaults to `session.yaml` (`--task` overrides).
+Fixed: the LeRobot interpreter path was `.resolve()`d, which follows the venv
+`bin/python` symlink to `/usr/bin/python3.12` and leaves the venv (affected
+`process_session` too); now `.absolute()`. Choices: third D-021 amendment.
+Verification: 83/83 pytest, focused flake8, `git diff --check`, Jazzy build.
+Real-data software run: two scratch sessions (tasks in English and Chinese),
+each with an episode copied from the real accepted
+`online_session_20260921_181056_923446/calibration_001` (1080p Action 4 +
+real Vive MCAP); `build_dataset --format both` aligned 1332/1332 frames per
+session and produced a 710 MB HDF5 (2 episodes/2664 samples) and a 51 MB
+LeRobot v3 dataset in ~9 min; LeRobot 0.4.4 reload gave 2 episodes, 2664
+frames, 30 fps, tasks with task_index 0/1, correct per-frame
+`umi.source_session` and identity first states. CLI failure on the real v1
+session (empty task, no episodes) reported both reasons and left no output;
+`process_session` still works. The original recording was not modified.
+Not yet: real multi-task episodes, training-side acceptance, stage 3 hardware.
+
 ## Latest update — multi-task sessions, stage 3: in-launch `n` switching (2026-09-28)
 
 `episode_keyboard` `n` + Enter (idle only; refused without stopping while

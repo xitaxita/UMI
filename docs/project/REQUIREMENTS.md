@@ -27,8 +27,9 @@ was removed by D-021. Online uses MJPEG UVC input, H.264 MP4 output, best-effort
 preview, camera-stream warmup, and pose pre-roll.
 The temporal-offset estimator and decoupled alignment, episode-coordinate and
 HDF5 export stages are implemented, but no real calibration result has yet been
-accepted for final dataset validation. Camera intrinsic calibration and multi-session
-dataset merging (D-021) remain outside the delivered implementation.
+accepted for final dataset validation. Camera intrinsic calibration remains outside the delivered implementation.
+Multi-session dataset merging (D-021, `build_dataset`) is implemented and
+software-verified; real multi-task data acceptance is pending.
 
 Current delivery acceptance requires a successful ROS 2 build, passing software
 tests, and a hardware run showing a changing pose, TF, and trajectory path for

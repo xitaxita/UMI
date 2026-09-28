@@ -7,10 +7,18 @@ from pathlib import Path
 
 import numpy as np
 
-from .export_hdf5 import _cv2, resolve_transformed_items
+from .dataset_plan import (
+    read_plan,
+    read_transformed_item,
+    session_summary,
+    sources_for_root,
+    task_table,
+)
+from .export_hdf5 import _cv2
 
 
-FORMAT_VERSION = 1
+# Version 2 (D-021): per-session tasks and umi.source_session per frame.
+FORMAT_VERSION = 2
 IMAGE_KEY = 'observation.images.action4'
 STATE_KEY = 'observation.state'
 
@@ -25,18 +33,6 @@ def _lerobot_dataset_class():
             'setuptools requirements conflict with ROS 2 Jazzy. Import error: '
             f'{error}') from error
     return LeRobotDataset
-
-
-def _read_item(item):
-    report = json.loads(
-        (item / 'transform.json').read_text(encoding='utf-8'))
-    with np.load(item / 'episode_frames.npz') as values:
-        arrays = {name: values[name].copy() for name in values.files}
-    version = int(np.asarray(arrays['contract_version']).item())
-    if version != FORMAT_VERSION:
-        raise ValueError(
-            f'unsupported episode contract version {version}: {item}')
-    return report, arrays
 
 
 def _video_dimensions(path):
@@ -72,12 +68,16 @@ def _features(height, width):
         'umi.pose_query_time_seconds': {
             'dtype': 'float64', 'shape': (1,), 'names': ['seconds'],
         },
+        'umi.source_session': {
+            'dtype': 'string', 'shape': (1,), 'names': None,
+        },
     }
 
 
-def _add_episode(dataset, item, task, fps):
+def _add_episode(dataset, source):
     cv2 = _cv2()
-    report, arrays = _read_item(item)
+    item = Path(source.item)
+    report, arrays = read_transformed_item(item)
     valid = np.asarray(arrays['valid'], dtype=bool)
     selected = np.flatnonzero(valid)
     if not len(selected):
@@ -112,7 +112,8 @@ def _add_episode(dataset, item, task, fps):
                     'umi.pose_query_time_seconds': np.asarray(
                         [arrays['pose_query_time_seconds'][decoded]],
                         dtype=np.float64),
-                    'task': task,
+                    'umi.source_session': source.source_session,
+                    'task': source.task,
                 })
                 added += 1
             decoded += 1
@@ -135,22 +136,25 @@ def _safe_remove_staging(path):
         shutil.rmtree(path)
 
 
-def export_lerobot(args):
-    """Export all transformed episodes using the official LeRobot v3 API."""
-    if args.fps <= 0:
+def write_lerobot(output, sources, repo_id, fps, video_codec='h264',
+                  image_writer_threads=4, encoder_threads=None,
+                  overwrite=False, source_description=''):
+    """Export planned episodes from one or more sessions via LeRobot v3."""
+    if fps <= 0:
         raise ValueError('fps must be greater than zero')
-    items = resolve_transformed_items(args.input_path)
-    first_report, _ = _read_item(items[0])
-    first_video = Path(first_report['source_video'])
-    height, width = _video_dimensions(first_video)
-    for item in items[1:]:
-        report, _ = _read_item(item)
-        dimensions = _video_dimensions(Path(report['source_video']))
-        if dimensions != (height, width):
-            raise ValueError('all LeRobot episodes must use one image shape')
+    if not sources:
+        raise ValueError('no episodes to export')
+    dimensions = set()
+    for source in sources:
+        report, _ = read_transformed_item(Path(source.item))
+        dimensions.add(_video_dimensions(Path(report['source_video'])))
+    if len(dimensions) != 1:
+        raise ValueError(
+            f'all LeRobot episodes must use one image shape: {dimensions}')
+    height, width = dimensions.pop()
 
-    output = Path(args.output).expanduser().resolve()
-    if output.exists() and not args.overwrite:
+    output = Path(output).expanduser().resolve()
+    if output.exists() and not overwrite:
         raise FileExistsError(
             f'output already exists; use --overwrite: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -160,42 +164,57 @@ def export_lerobot(args):
     dataset = None
     try:
         dataset = dataset_class.create(
-            repo_id=args.repo_id,
-            fps=args.fps,
+            repo_id=repo_id,
+            fps=fps,
             features=_features(height, width),
             root=staging,
             robot_type='umi_vive_action4',
             use_videos=True,
-            vcodec=args.video_codec,
-            image_writer_threads=args.image_writer_threads,
-            encoder_threads=args.encoder_threads,
+            vcodec=video_codec,
+            image_writer_threads=image_writer_threads,
+            encoder_threads=encoder_threads,
         )
         counts = []
-        for item in items:
-            count = _add_episode(dataset, item, args.task, args.fps)
+        for index, source in enumerate(sources):
+            count = _add_episode(dataset, source)
             counts.append(count)
-            print(f'{item.name}: exported {count} LeRobot frames')
+            print(f'episode {index} <- {source.source_session}/'
+                  f'{Path(source.item).name}: exported {count} frames')
         dataset.finalize()
         dataset = None
         manifest = {
             'schema_version': FORMAT_VERSION,
             'format': 'lerobot_v3',
-            'repo_id': args.repo_id,
-            'fps': args.fps,
+            'repo_id': repo_id,
+            'fps': fps,
             'episode_count': len(counts),
             'frame_count': sum(counts),
-            'source_transformed_root': str(
-                Path(args.input_path).expanduser().resolve()),
+            'source': source_description,
+            'tasks': task_table(sources),
+            'source_sessions': session_summary(sources),
+            'episodes': [
+                {
+                    'episode_index': index,
+                    'source_session': source.source_session,
+                    'source_episode': source.source_episode,
+                    'task': source.task,
+                    'video_to_pose_offset_seconds': (
+                        source.video_to_pose_offset_seconds),
+                    'frame_count': count,
+                }
+                for index, (source, count) in enumerate(zip(sources, counts))
+            ],
             'state_layout': 'x y z qx qy qz qw',
             'coordinate_frame': 'episode_start_pose',
             'action_field': None,
         }
         (staging / 'umi_export.json').write_text(
-            json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+            json.dumps(manifest, indent=2, ensure_ascii=False) + '\n',
+            encoding='utf-8')
         if output.exists():
             shutil.rmtree(output)
         staging.replace(output)
-    except Exception:
+    except BaseException:
         if dataset is not None:
             try:
                 dataset.finalize()
@@ -207,15 +226,39 @@ def export_lerobot(args):
     return 0
 
 
+def export_lerobot(args):
+    """Export one transformed root, or a multi-session plan."""
+    input_path = getattr(args, 'input_path', None)
+    plan = getattr(args, 'plan', None)
+    if bool(input_path) == bool(plan):
+        raise ValueError('give either a transformed input_path or --plan')
+    if plan:
+        sources = read_plan(plan)
+        description = str(Path(plan).expanduser().resolve())
+    else:
+        root = Path(input_path).expanduser().resolve()
+        sources = sources_for_root(root, args.task)
+        description = str(root)
+    return write_lerobot(
+        args.output, sources, args.repo_id, args.fps, args.video_codec,
+        args.image_writer_threads, args.encoder_threads, args.overwrite,
+        description)
+
+
 def argument_parser():
     """Build the LeRobot v3 export CLI."""
     parser = argparse.ArgumentParser(
         description='Export transformed UMI episodes to LeRobot v3')
-    parser.add_argument('input_path', help='Transformed session or episode')
+    parser.add_argument(
+        'input_path', nargs='?', help='Transformed session or episode')
+    parser.add_argument(
+        '--plan', help='Multi-session dataset plan written by build_dataset')
     parser.add_argument(
         '--output', required=True, help='Dataset root directory')
     parser.add_argument('--repo-id', required=True, help='owner/dataset name')
-    parser.add_argument('--task', default='UMI demonstration')
+    parser.add_argument(
+        '--task', default='UMI demonstration',
+        help='Task for input_path episodes (ignored with --plan)')
     parser.add_argument('--fps', type=int, default=30)
     parser.add_argument(
         '--video-codec', choices=('h264', 'hevc', 'libsvtav1', 'auto'),

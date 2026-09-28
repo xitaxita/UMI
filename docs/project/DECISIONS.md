@@ -71,6 +71,37 @@
 - `process_session --run-calibration` uses the highest-numbered calibration by
   default; `--calibration <name|path>` selects one explicitly.
 
+### D-021 amendment: multi-session dataset build
+
+- **Status:** Implementer choices within D-021, recorded 2026-09-28.
+- `build_dataset <session|directory-of-sessions...> --output <dir>` always
+  rebuilds from scratch into `<dir>.partial` and swaps it in only after every
+  session and export succeeded. `<dir>` holds `processed/<session>/aligned`,
+  `processed/<session>/transformed`, `dataset.hdf5` and/or `lerobot/`, and
+  `build_manifest.json`. `--overwrite` only replaces a directory that already
+  contains `build_manifest.json`.
+- Calibration: a session's own accepted result is used. `--run-calibration`
+  runs `calibrate_time` on the newest calibration only for sessions without an
+  accepted result (same rule as `process_session`).
+- Whole-build checks, each failing with the session and reason: non-empty
+  `task`; accepted calibration; at least one ordinary episode; every episode
+  aligned as accepted; equal image size and frame rate (read from each MP4)
+  across all episodes; transformed contract version equal to the supported one.
+  The detected frame rate is used for LeRobot.
+- HDF5 `format_version` 2: episodes are numbered across the dataset
+  (`episode_0000…`); each episode has attrs `task`, `task_index`,
+  `source_session`, `source_episode`, `video_to_pose_offset_seconds`; the root
+  has a `tasks` string dataset indexed by `task_index` (first-appearance order)
+  and no single `task` attribute.
+- LeRobot: each frame's `task` comes from its session; `umi.source_session` is
+  a per-frame `string` feature; `umi_export.json` lists every source session,
+  task and offset. No `action` field.
+- `transform.json` additionally records the alignment offset and its source
+  (additive; contract version unchanged).
+- `process_session` stays as the single-session command; its task now
+  defaults to `session.yaml` and `--task` is only an override. Standalone
+  `export_hdf5`/`export_lerobot` keep `--task` for one transformed root.
+
 ## D-020: Define the measured Tracker-to-gripper TCP extrinsic
 
 - **Status:** Accepted on 2026-09-21.

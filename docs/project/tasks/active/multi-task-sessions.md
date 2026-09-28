@@ -1,7 +1,7 @@
 # 多任务 session 重构（交接文档）
 
 - **任务标识：** `multi-task-sessions`
-- **状态：** 阶段 1～3 已完成（软件验证通过）；阶段 3 待真机验收；阶段 4 待做
+- **状态：** 阶段 1～4 代码完成，均已软件验证；阶段 3 待真机验收；阶段 4 待用真实多任务 episode 数据验收；分支未合并、未推送
 - **决策来源：** D-021（2026-09-28 已写入 `DECISIONS.md`）
 - **分支：** `feature/multi-task-sessions`
 - **交接日期：** 2026-09-28
@@ -177,10 +177,24 @@ worker 的录制输出路径本来就是每次 start 命令传入，只有状态
    正确的原因；单 session 的行为与原来一致。
 7. 构建、测试，用真实的 session 做一次合并导出，并用 LeRobot 回读检查，然后提交。
 
+**阶段 4 结果（2026-09-28）：** 已实现并软件验证。实现选择写入 D-021 第三条 amendment（输出目录
+结构、`--run-calibration` 只对未 accepted 的 session 运行、帧率由真实 PTS 间隔测得等）。验证：pytest
+83/83（新增 `test_build_dataset.py`：多 session HDF5 编号/task_index/tasks 表/属性、预检整体失败
+并列出原因、`--run-calibration` 选最新、尺寸与帧率不一致、contract 版本不一致、对齐被拒、
+`--overwrite` 安全、session 解析、`process_session` 默认 task、LeRobot 计划与逐帧 task/来源、
+venv 解释器符号链接）；改动文件 flake8、`git diff --check`、构建通过。真实数据：工作区唯一的
+真实 session 没有 episode，因此在临时目录把它的 accepted calibration 录像复制为两个不同 task
+的测试 session 的 episode，用 `build_dataset --format both` 合并导出，HDF5 与 LeRobot 0.4.4 回读
+均正确（详见 `coding_context.md`）；原始数据未被修改。过程中发现并修复：OpenCV 报告的帧率为
+29.969（改用 PTS 间隔）；LeRobot 解释器路径被 `resolve()` 到系统 Python（`process_session` 同样
+受影响，已一并修复）。
+
 ### 收尾
 
-- 更新 `project.md`（能力表、在线文件结构、操作流程、待办）和 `coding_context.md`。
-- 更新本文件的状态，并写明各阶段的验证证据。
+- [x] `project.md`（能力表、在线文件结构、操作流程、待办）和 `coding_context.md` 已更新（2026-09-28）。
+- [x] 本文件状态与各阶段验证证据已写明。
+- [ ] 用户真机验收阶段 3，并用真实多任务 episode 验收阶段 4。
+- [ ] 分支 `feature/multi-task-sessions` 由用户决定何时合并/推送。
 
 ## 需要先核实的地方（交接时尚未读过相关源码）
 
