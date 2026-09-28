@@ -35,8 +35,6 @@ setup(
             'umi_ros2.synchronization.calibrate_time:main',
             'generate_aruco_marker = '
             'umi_ros2.synchronization.generate_marker:main',
-            'compressed_preview_node = '
-            'umi_ros2.camera.compressed_preview_node:main',
             'replay_path_node = '
             'umi_ros2.visualization.replay_path_node:main',
             'session_replay_node = '
@@ -46,7 +44,6 @@ setup(
             'umi_ros2.postprocess.transform_session:main',
             'export_hdf5 = umi_ros2.postprocess.export_hdf5:main',
             'export_lerobot = umi_ros2.postprocess.export_lerobot:main',
-            'process_session = umi_ros2.postprocess.process_session:main',
             'build_dataset = umi_ros2.postprocess.build_dataset:main',
             'set_session_task = '
             'umi_ros2.session.set_session_task:main',

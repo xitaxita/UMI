@@ -3,12 +3,12 @@
 import argparse
 import csv
 import json
-import re
 import subprocess
 from pathlib import Path
 
 import numpy as np
 
+from umi_ros2.common.ordering import natural_key
 from umi_ros2.postprocess.alignment import interpolate_poses
 from umi_ros2.postprocess.pose_io import read_vive_poses
 from umi_ros2.session.layout import read_session
@@ -37,13 +37,6 @@ def video_frame_times(path):
     return times
 
 
-def _natural_key(path):
-    return [
-        int(part) if part.isdigit() else part
-        for part in re.split(r'(\d+)', path.name)
-    ]
-
-
 def resolve_episodes(input_path):
     """Return a source session and the ordinary episodes to align."""
     path = Path(input_path).expanduser().resolve()
@@ -61,7 +54,7 @@ def resolve_episodes(input_path):
     episodes = sorted([
         child for child in episodes_path.iterdir()
         if child.is_dir() and child.name.startswith('episode_')
-    ], key=_natural_key) if episodes_path.is_dir() else []
+    ], key=natural_key) if episodes_path.is_dir() else []
     if not episodes:
         raise ValueError(f'session contains no ordinary episodes: {path}')
     return path, episodes

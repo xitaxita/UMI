@@ -513,61 +513,32 @@ HDF5（`format_version` 2）中 episode 在整个数据集中统一编号
 
 ### 只处理一个 session
 
-`process_session` 仍可处理单个 session，task 默认读取 `session.yaml`
-（`--task` 只用于临时覆盖）：
+同样使用 `build_dataset`，只给一个 session 即可：
 
 ```bash
-ros2 run umi_ros2 process_session \
+ros2 run umi_ros2 build_dataset \
   recordings/online_session_<时间> \
-  --format hdf5
+  --format hdf5 --output datasets/<名称>
 ```
 
-如果 `session.yaml` 还没有 accepted 标定结果，可以加
-`--run-calibration`，程序会先处理编号最大（最新）的 calibration；如需指定，
-再加 `--calibration calibration_<编号>`（显式指定时即使已有 accepted 结果也会
-重新运行）。标定不通过时流程会停止，不会继续生成正式数据。`--offset-seconds` 仅供诊断，不能代替正式标定。
+- 需要指定用哪一条 calibration 时，先对该目录直接运行 `calibrate_time`（见第 12
+  节），再运行 `build_dataset`。
+- 需要修改 task 时，用 `set_session_task`。
+- 需要用手动 offset 诊断时，按下文分阶段运行 `align_session --offset-seconds`；
+  这种结果不能代替正式标定。
 
-默认输出结构：
-
-```text
-processed/online_session_<时间>/
-├── aligned/                       # 世界坐标下逐视频帧 pose
-│   ├── alignment_summary.json
-│   └── episodes/episode_0001/
-├── transformed/                   # episode 起点坐标下逐帧 pose
-│   ├── transform_summary.json
-│   └── episodes/episode_0001/
-│       ├── episode_frames.npz
-│       ├── episode_frames.csv
-│       └── transform.json
-├── dataset.hdf5                   # 选择 hdf5/both 时生成
-└── lerobot/                       # 选择 lerobot/both 时生成
-    ├── meta/                      # LeRobot v3 元数据与 episode 索引
-    ├── data/                      # Parquet 状态、时间戳和索引
-    ├── videos/                    # 按 episode 保存的视频
-    └── umi_export.json            # 本项目补充的导出说明
-```
+### 数据内容
 
 每条 episode 的第一条有效视频帧 pose 被定义为原点。后续位置和姿态都表示为
-相对于该原点的变换。无效帧不会被补值，默认不写入最终 HDF5。HDF5 中每个
+相对于该原点的变换。无效帧不会被补值，也不会写入最终数据。HDF5 中每个
 episode 包含逐帧 JPEG 图像、`[x,y,z,qx,qy,qz,qw]` pose、原视频帧号、视频
 PTS 和 pose 查询时间。可以用 `--jpeg-quality` 调整图像压缩质量。
 
-同时生成 HDF5 和 LeRobot v3：
-
-```bash
-ros2 run umi_ros2 process_session \
-  recordings/online_session_<时间> \
-  --format both \
-  --repo-id local/umi_demo
-```
-
-`build_dataset` 与 `process_session` 的 LeRobot 选项相同。只生成 LeRobot 时使用 `--format lerobot`。默认会调用
-`~/umi_lerobot_venv312/bin/python`；环境在其他位置时增加
+LeRobot 导出默认调用 `~/umi_lerobot_venv312/bin/python`；环境在其他位置时增加
 `--lerobot-python /实际路径/bin/python`。LeRobot 输出使用官方 v3 API，图像
-保存为视频，状态为 episode 起点坐标系下的
-`[x,y,z,qx,qy,qz,qw]`。同时保留源视频帧号、真实视频 PTS 和 pose 查询时间。
-LeRobot 自身的 `timestamp` 是按导出帧序号和 `--fps` 生成的固定频率时间轴。
+保存为视频，状态为 episode 起点坐标系下的 `[x,y,z,qx,qy,qz,qw]`。同时保留源视频
+帧号、真实视频 PTS 和 pose 查询时间。LeRobot 自身的 `timestamp` 是按导出帧序号和
+视频实测帧率生成的固定频率时间轴。
 
 当前没有可靠的机器人 action/夹爪控制量，因此导出器不会伪造 `action` 字段；
 后续确定 action 语义后再独立扩展 schema。

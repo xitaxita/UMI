@@ -1,1 +1,1 @@
-"""Shared runtime helpers."""
+"""ROS-independent helpers shared across the package."""

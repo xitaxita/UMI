@@ -5,11 +5,12 @@ separate LeRobot environment can read the same plan.
 """
 
 import json
-import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
+
+from umi_ros2.common.ordering import natural_key
 
 from .transform_session import CONTRACT_VERSION
 
@@ -26,14 +27,6 @@ class EpisodeSource:
     source_session: str
     source_episode: str
     video_to_pose_offset_seconds: float = None
-
-
-def natural_key(path):
-    """Sort names containing numbers numerically."""
-    return [
-        int(part) if part.isdigit() else part
-        for part in re.split(r'(\d+)', Path(path).name)
-    ]
 
 
 def resolve_transformed_items(input_path):

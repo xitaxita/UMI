@@ -1,9 +1,10 @@
 """Resolve and time separated UMI session replay inputs."""
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from umi_ros2.common.ordering import natural_key
 
 import yaml
 
@@ -17,13 +18,6 @@ class ReplayItem:
     pose_path: Path
     video_start_ns: int
     pose_start_ns: int
-
-
-def _natural_key(path):
-    return [
-        int(part) if part.isdigit() else part
-        for part in re.split(r'(\d+)', path.name)
-    ]
 
 
 def _recording(path):
@@ -80,7 +74,7 @@ def resolve_replay_items(input_path):
             child for child in group_path.iterdir()
             if child.is_dir() and child.name.startswith(prefix)
         ]
-        candidates.extend(sorted(children, key=_natural_key))
+        candidates.extend(sorted(children, key=natural_key))
     if not candidates:
         raise ValueError(f'session contains no replay recordings: {path}')
     return [_recording(candidate) for candidate in candidates]

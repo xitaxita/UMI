@@ -37,34 +37,6 @@ def test_transform_item_writes_versioned_export_contract(tmp_path):
             [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
 
 
-def test_pipeline_calls_stages_in_order(tmp_path, monkeypatch):
-    """Keep orchestration free of stage implementation details."""
-    from umi_ros2.postprocess import process_session
-
-    session = tmp_path / 'online_session_example'
-    session.mkdir()
-    (session / 'session.yaml').write_text(
-        'temporal_calibration:\n  status: accepted\n', encoding='utf-8')
-    calls = []
-    monkeypatch.setattr(
-        process_session, 'align', lambda args: calls.append('align') or 0)
-    monkeypatch.setattr(
-        process_session, 'transform',
-        lambda args: calls.append('transform') or 0)
-    monkeypatch.setattr(
-        process_session, 'export_hdf5',
-        lambda args: calls.append('export_hdf5') or 0)
-    args = SimpleNamespace(
-        session=str(session), output=str(tmp_path / 'processed'),
-        run_calibration=False, offset_seconds=None, maximum_pose_gap=0.1,
-        minimum_valid_ratio=0.95, task='', jpeg_quality=95,
-        format='hdf5', repo_id=None, fps=30, video_codec='h264',
-        overwrite=False,
-    )
-    assert process_session.process(args) == 0
-    assert calls == ['align', 'transform', 'export_hdf5']
-
-
 def test_hdf5_export_keeps_image_pose_counts_equal(tmp_path, monkeypatch):
     """Write one compressed image and one relative pose per valid frame."""
     h5py = pytest.importorskip('h5py')

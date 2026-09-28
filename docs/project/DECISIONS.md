@@ -1,5 +1,27 @@
 # UMI — Development decisions
 
+## D-022: Simplify the project structure
+
+- **Status:** Accepted by the user on 2026-09-28.
+- Remove unused or abandoned code: `compressed_preview_node` and
+  `common/images.py` (legacy JPEG-bag replay), `tools/action4_uvc/` (the
+  abandoned native-H.264 driver patch) and `tools/test_gripper_relative_tf.py`.
+- Remove `process_session`. `build_dataset` is the single orchestration entry
+  and also handles one session. This supersedes the D-021 handoff requirement
+  to keep `process_session`. Its extra options are replaced by
+  `align_session --offset-seconds` (diagnostics), running `calibrate_time` on
+  the chosen calibration (calibration choice) and `set_session_task` (task).
+- The Tracker-to-TCP extrinsic has one source of truth: `vive_pose_node`
+  parameters `tracker_to_tcp_translation_m` and `tracker_to_tcp_rotation_xyzw`
+  in `config/vive.yaml`. The node reads them at startup and accepts validated
+  live updates through ROS parameters (`ros2 param set`) without restarting.
+  `config/gripper_extrinsics.yaml` (never loaded) and the hard-coded constants
+  are removed. Amends D-020.
+- `coding_context.md` is rewritten as a current-state document without the
+  historical update log (history remains in git). Completed tasks move to
+  `tasks/archive/`; `ARCHITECTURE.md` describes only the current system.
+  Decisions are kept, reordered by number, with a status index.
+
 ## D-021: One task per online session, multi-session datasets, no offline mode
 
 - **Status:** Accepted by the user on 2026-09-28. Implementation is staged in

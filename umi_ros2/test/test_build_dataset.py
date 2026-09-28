@@ -324,26 +324,6 @@ def test_resolve_sessions_accepts_parents_and_deduplicates(tmp_path):
         build_dataset.resolve_sessions([first, copy])
 
 
-def test_process_session_defaults_to_session_task(tmp_path, monkeypatch):
-    """The single-session command reads the task from session.yaml."""
-    from umi_ros2.postprocess import process_session
-
-    session = _session(tmp_path, 'wipe table')
-    seen = []
-    monkeypatch.setattr(process_session, 'align', lambda args: 0)
-    monkeypatch.setattr(process_session, 'transform', lambda args: 0)
-    monkeypatch.setattr(
-        process_session, 'export_hdf5',
-        lambda args: seen.append(args.task) or 0)
-    args = process_session.argument_parser().parse_args(
-        [str(session), '--output', str(tmp_path / 'p')])
-    assert process_session.process(args) == 0
-    args = process_session.argument_parser().parse_args(
-        [str(session), '--output', str(tmp_path / 'q'), '--task', 'x'])
-    assert process_session.process(args) == 0
-    assert seen == ['wipe table', 'x']
-
-
 def test_lerobot_plan_carries_per_session_task_and_source(
         tmp_path, fake_media, monkeypatch):
     """Each LeRobot frame gets its session's task and source name."""

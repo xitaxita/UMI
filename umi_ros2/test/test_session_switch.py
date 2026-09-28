@@ -8,10 +8,6 @@ import pytest
 
 from umi_ros2.camera import episode_keyboard
 from umi_ros2.camera.h264_capture_node import H264CaptureNode
-from umi_ros2.postprocess.process_session import (
-    _ensure_calibration,
-    select_calibration,
-)
 from umi_ros2.session import layout
 from umi_ros2.session.layout import (
     calibration_directories,
@@ -156,31 +152,15 @@ def test_calibration_order_is_numeric(tmp_path):
         'calibration_999', 'calibration_1000']
 
 
-def test_select_calibration_default_and_explicit(tmp_path):
-    """Default to the newest calibration; allow an explicit choice."""
-    session = create_online_session(tmp_path)
-    first = _calibration(session, 1)
-    second = _calibration(session, 2)
-    assert select_calibration(session) == second
-    assert select_calibration(session, 'calibration_001') == first
-    assert select_calibration(session, str(first)) == first
-    with pytest.raises(ValueError):
-        select_calibration(session, 'calibration_009')
-    with pytest.raises(ValueError):
-        select_calibration(session, str(session / 'episodes'))
-    empty = create_online_session(tmp_path)
-    with pytest.raises(ValueError, match='no calibration'):
-        select_calibration(empty)
-
-
-def test_explicit_calibration_requires_run_flag(tmp_path):
-    """Reject a calibration choice that would silently be ignored."""
+def test_latest_calibration_is_the_default_choice(tmp_path):
+    """build_dataset --run-calibration uses the newest calibration."""
     session = create_online_session(tmp_path)
     _calibration(session, 1)
-    with pytest.raises(ValueError, match='--run-calibration'):
-        _ensure_calibration(session, False, None, 'calibration_001')
-    with pytest.raises(ValueError, match='--offset-seconds'):
-        _ensure_calibration(session, True, 0.0, 'calibration_001')
+    second = _calibration(session, 2)
+    assert latest_calibration(session) == second
+    empty = create_online_session(tmp_path)
+    with pytest.raises(ValueError, match='no calibration'):
+        latest_calibration(empty)
 
 
 class _FakeNode(SimpleNamespace):

@@ -3,22 +3,16 @@
 import argparse
 import csv
 import json
-import re
 from pathlib import Path
 
 import numpy as np
+
+from umi_ros2.common.ordering import natural_key
 
 from .episode_transform import transform_to_episode_frame
 
 
 CONTRACT_VERSION = 1
-
-
-def _natural_key(path):
-    return [
-        int(part) if part.isdigit() else part
-        for part in re.split(r'(\d+)', path.name)
-    ]
 
 
 def resolve_aligned_items(input_path):
@@ -34,7 +28,7 @@ def resolve_aligned_items(input_path):
     items = sorted([
         child for child in episodes.iterdir()
         if child.is_dir() and (child / 'aligned_frames.npz').is_file()
-    ], key=_natural_key)
+    ], key=natural_key)
     if not items:
         raise ValueError(f'aligned session contains no episodes: {path}')
     return path, items

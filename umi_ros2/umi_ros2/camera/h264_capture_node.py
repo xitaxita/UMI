@@ -47,7 +47,6 @@ class H264CaptureNode(Node):
         self.declare_parameter('preview_topic', '/action4/image_preview')
         self.declare_parameter('preview_width', 640)
         self.declare_parameter('preview_height', 360)
-        self.declare_parameter('output_path', '')
         self.declare_parameter('episode_mode', False)
         self.declare_parameter('recordings_root', 'recordings')
         self.declare_parameter('task', '')
