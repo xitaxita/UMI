@@ -1,10 +1,12 @@
 # UMI 项目看板
 
-> 核对时间：2026-09-21。依据当前工作区源码、配置、测试和真实 session 诊断核对。ROS 包版本：`umi_ros2 0.2.0`。
+> 核对时间：2026-09-28。依据当前工作区源码、配置、测试和真实 session 诊断核对。ROS 包版本：`umi_ros2 0.2.0`。
 
 ## 项目目标与当前重点
 
-DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视频和六自由度位姿，之后校正时间差并生成机器人学习数据。离线（相机录到 microSD）是主方案；在线（相机 USB Webcam）是独立方案，不同时使用 microSD 录像。
+DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视频和六自由度位姿，之后校正时间差并生成机器人学习数据。只使用在线采集（相机 USB Webcam）；原离线（microSD）模式已按 D-021 删除。
+
+**进行中：**[多任务 session 重构](docs/project/tasks/active/multi-task-sessions.md)（分支 `feature/multi-task-sessions`）——一个 session 对应一个 task、同一 launch 内切换 session、多 session 合并导出。阶段 1（删除离线采集）已完成并通过软件验证；阶段 2～4 待做。
 
 当前已有从在线 raw session 到 HDF5 和原生 LeRobot v3 的完整模块化软件链路；真实 accepted 时间标定、action 语义和训练侧 schema 验收仍待完成。
 
@@ -15,7 +17,6 @@ DJI Action 4 与 Vive Tracker 刚性安装在同一夹爪上，分别采集视�
 | Vive 定位 | pysurvive 选取 Tracker；`/vive/pose` 和 `/vive/path` 表示夹爪 TCP，`/tf` 同时发布 `vive_world → vive_tracker` 与 `vive_world → gripper_tcp`；默认发布定时器 90 Hz | 数学组合和软件测试通过；两个 TF 及夹爪末端位置等待用户真机检查 |
 | 在线观察 | `online_view.launch.py` 启动 Vive、Action 4 和 RViz2，不创建正式在线 episode | launch/软件检查通过；设备须处于 Webcam 模式 |
 | 在线采集 | `online_record.launch.py` 创建一个 session；键盘服务可依次录 calibration 和多条 episode | 软件实现与测试通过；新版常驻 pose recorder 尚未完成 Action 4 + Vive 多 episode 真机验收 |
-| 离线采集 | `offline_record.launch.py` 仅记录 Vive pose/TF MCAP，RViz 显示路径；相机自行录 SD 卡 | 单次 pose-only 基础版；完整硬件和视频导入验收待做，无离线多 episode 控制 |
 | 在线回放 | `replay.launch.py` 可读取一条 calibration/episode，或按 calibration→episodes 顺序读整个 session；回放预览默认 1280×720，可选原视频 1920×1080 | 1× 无 RViz 进程实测可发布 443/468 帧；RViz 实际画面和整场 session 仍待观察 |
 | 时间差估计 | `generate_aruco_marker` 和多特征 `calibrate_time` 使用 ArUco 中心/尺度/角度与 TCP 平移/旋转估计常量时间差，并检查分段一致性 | 53 项测试通过；一条真实 calibration 得到 -95.01 ms、分段标准差 4.14 ms 并通过软件验收，仍需跨次重复验证 |
 | 逐帧对齐 | `align_session` 用 MP4 真实 PTS、已接受的 offset 和 Vive MCAP 插值得到每帧 pose | 软件测试及零 offset 真实数据诊断通过；尚未以真实 accepted offset 验证 |
@@ -60,18 +61,6 @@ recordings/online_session_<时间>/
 
 `/vive/path` 只作 RViz 可视化，不记录；需要时可从 `/vive/pose` 重建。在线记录不保存 Action 4 内部 IMU，也不把完整原始图像逐帧写入 ROS bag。
 
-## 离线模式现状
-
-`offline_record.launch.py` 创建新的 `offline_session_<时间>/`、`session.yaml` 和预留的 `calibration/`，等待默认 3 秒后通过 `ros2 bag record` 将 `/vive/pose`、`/tf`、`/tf_static` 记录到会话根下的 `pose/`。它只启动 Vive 和 pose/path RViz，**不接入 Action 4 USB**。相机应独立以 4K/60 fps、关闭电子防抖的设置录到 microSD，结束后由操作者把相应视频复制为根目录 `video.mp4`。代码目前没有自动 SD 导入、离线 episode 切换或离线时间标定流程。
-
-```text
-recordings/offline_session_<时间>/
-├── session.yaml
-├── calibration/          # 当前仅预留
-├── pose/                 # MCAP，由电脑采集
-└── video.mp4             # 由操作者事后复制；采集时不存在
-```
-
 ## 标定、回放与后处理的边界
 
 - 在线 calibration 使用固定 ArUco `DICT_4X4_50`、ID 4，配合重复左右运动；`calibrate_time` 写入 `time_offset.json`、`alignment_report.png`，并更新该在线 session 的 `session.yaml`。一条通过检查的结果只计划用于同一次未中断的在线 session；相机/Vive 重启、重新连接或时钟不连续后不能沿用。
@@ -91,11 +80,11 @@ recordings/offline_session_<时间>/
 | --- | --- |
 | `umi_ros2/umi_ros2/vive/` | pysurvive 适配、Vive 发布节点、在线常驻 pose recorder |
 | `umi_ros2/umi_ros2/camera/` | Action 4 ROS 控制节点、GStreamer worker、预览和键盘控制 |
-| `umi_ros2/umi_ros2/session/` | 在线/离线目录与 `session.yaml` 更新 |
+| `umi_ros2/umi_ros2/session/` | 在线 session 目录与 `session.yaml` 更新 |
 | `umi_ros2/umi_ros2/synchronization/` | ArUco 标记生成和一次性时间差估计 |
 | `umi_ros2/umi_ros2/postprocess/` | MCAP 读取、pose 插值、episode 坐标变换、HDF5/LeRobot v3 导出和纯编排；不是 ROS 节点 |
 | `umi_ros2/umi_ros2/visualization/` | MP4+MCAP 回放协调与回放路径重建 |
-| `umi_ros2/config/`、`umi_ros2/rviz/` | 设备默认参数、在线/离线 RViz 配置 |
+| `umi_ros2/config/`、`umi_ros2/rviz/` | 设备默认参数、在线/诊断 RViz 配置 |
 | `umi_ros2/test/` | 单元测试、launch 合约和独立 MCAP writer 集成测试 |
 
 | launch | 启动内容与用途 |
@@ -104,7 +93,7 @@ recordings/offline_session_<时间>/
 | `camera.launch.py` | 仅启动 Action 4 预览，排查相机；默认不创建 session |
 | `online_view.launch.py` | Vive + Action 4 + RViz，仅观察 |
 | `online_record.launch.py` | Vive + Action 4 + RViz + 相机节点内部常驻 pose recorder，正式在线 session |
-| `offline_record.launch.py` | Vive + RViz + `ros2 bag record`，离线 pose-only |
+| `urdf_path_diagnostic.launch.py` | 与现有 Vive launch 并行，叠加显示 URDF 与 `/vive/path`；尚未接入真实 URDF，未验收 |
 | `replay.launch.py` | MP4/MCAP 回放节点 + 路径重建节点 + RViz |
 
 `episode_keyboard` 是单独运行的 ROS 服务客户端，不由在线 launch 自动打开终端；`calibrate_time`、`generate_aruco_marker`、`align_session`、`transform_session`、`export_hdf5`、`export_lerobot` 和 `process_session` 都是一次性工具，不启动 ROS graph。仍保留 `compressed_preview_node` 供旧式 JPEG bag 兼容，当前 MP4+MCAP 回放不启动它。
@@ -116,7 +105,7 @@ recordings/offline_session_<时间>/
 - 工作区现有 `recordings/online_session_20260913_172757_796981` 含一条 calibration 和三条普通 episode；其 `session.yaml` 仍为 `temporal_calibration.status: not_calibrated`。这些数据早于当前常驻 pose recorder 修改，不能验证新版录制边界。
 - 此前以显式零 offset 读取上述三条真实 episode，分别得到 457/468、393/405、240/249 个有效帧。这仅证明读取/插值通路工作，**不证明图像与 pose 时间误差或训练数据质量达标**。
 - 现有 `aruco_id4.png` 是工作区未跟踪文件；当前代码可重新生成。没有已接受的真实 `time_offset.json` 或基于 accepted offset 的正式 HDF5/LeRobot 数据。
-- 工作区存在未提交的功能、文档改动及旧 `vive_ros2` 删除；本次只更新项目文档，不回滚或覆盖这些工作。
+- 旧 `vive_ros2` 包的删除、URDF 诊断 launch 已于 2026-09-28 作为快照提交；根目录 DJI 原始 MP4 不纳入 git（已写入 `.gitignore`）。
 - 2026-09-20 完整测试 **51 项通过**，后处理相关 flake8、symlink build、五个后处理安装入口和 `git diff --check` 通过。真实 `online_session_20260916_185704_823701` 用零 offset 诊断完成 174+222 帧对齐、坐标变换及 80.3 MiB HDF5 导出；首帧相对 pose 为单位变换，JPEG 可回读为 1920×1080。该结果位于 `/tmp`，不属于 accepted 时间同步训练数据。
 - 同一份 transformed 诊断数据已由官方 LeRobot 0.4.4 API 导出为原生 v3：2 episodes、396 frames、约 9.31 MB、7 个文件；本地重载得到 7 维 state 和 3×1080×1920 图像，首帧 state 为单位位姿。它同样使用零 offset，不代表时间同步精度通过。
 
@@ -125,12 +114,12 @@ recordings/offline_session_<时间>/
 1. **当前最重要：**用现版 `online_record.launch.py` 连续录两条以上真实 episode，检查各自 MP4 可解码、MCAP 可读、第一帧落入 pose 覆盖，观察预览与录制是否稳定，并检查 `video.validation.json` 的帧间隔。还应做更长时间的 USB/CPU/磁盘/温度测试；目前不能承诺“绝不掉帧”。
 2. 录制真实在线 calibration，运行 `calibrate_time`，人工检查曲线、`accepted` 状态和重复性；再用 accepted offset 跑 `align_session`。可见图像质量、视频时间锚点与姿态对应仍需人工复核。
 3. 验证 Vive TF/path 与 pose 的一致性、遮挡丢失/恢复；确认基站和世界系稳定性。默认 `publish_hz=90` 是发布定时器设置，改成 200 不保证硬件产生 200 Hz 新测量。
-4. 规划并验证离线多 episode、SD 视频导入和离线时间对齐。此部分尚无确定的最终组织细节。
+4. 完成[多任务 session 重构](docs/project/tasks/active/multi-task-sessions.md)阶段 2～4：`session.yaml` v2 与 `task` 字段、同一 launch 内 `n` 切换 session 并复制标定原始数据（需真机验收）、`build_dataset` 多 session 合并导出。
 5. 真机对比 `vive_world → vive_tracker`、`vive_world → gripper_tcp` 两个 TF，并检查 `/vive/pose`、`/vive/path` 的 TCP 位置与方向。新录制的 pose 已是夹爪 TCP pose，之后在 accepted offset 数据上重新导出并验收 HDF5 与 LeRobot v3，确定任务/action 字段及训练代码期望。相机内参、相机到 Tracker 外参和 Action 4 IMU 记录仍未完成。
 
 ## 资料入口
 
 - [README.md](README.md)：环境配置和操作者按步骤使用方法。
 - [coding_context.md](coding_context.md)：后续编码入口、当前约束和历史验证。
-- [需求](docs/project/REQUIREMENTS.md)、[架构](docs/project/ARCHITECTURE.md)、[决策](docs/project/DECISIONS.md)：正式项目记录；其中有部分历史方案段落，判断当前链路请以本页与源码、最新决定 D-011/D-015～D-018 为准。
-- 当前任务：[数据处理流程](docs/project/tasks/active/dataset-pipeline.md)、[在线常驻 pose](docs/project/tasks/active/persistent-pose-recording.md)、[时间标定](docs/project/tasks/active/temporal-calibration.md)、[逐帧对齐](docs/project/tasks/active/align-session.md)、[离线采集](docs/project/tasks/active/offline-acquisition.md)、[回放](docs/project/tasks/active/session-replay.md)。
+- [需求](docs/project/REQUIREMENTS.md)、[架构](docs/project/ARCHITECTURE.md)、[决策](docs/project/DECISIONS.md)：正式项目记录；其中有部分历史方案段落，判断当前链路请以本页与源码、最新决定 D-011/D-015～D-021 为准。
+- 当前任务：[数据处理流程](docs/project/tasks/active/dataset-pipeline.md)、[在线常驻 pose](docs/project/tasks/active/persistent-pose-recording.md)、[时间标定](docs/project/tasks/active/temporal-calibration.md)、[逐帧对齐](docs/project/tasks/active/align-session.md)、[多任务 session](docs/project/tasks/active/multi-task-sessions.md)、[回放](docs/project/tasks/active/session-replay.md)。

@@ -75,7 +75,8 @@ pending. Offline implementation is retained.
 - **Task identity:** `action4-acquisition`
 - **Project and delivery:** UMI, camera and raw-session acquisition
 - **Status:** In progress; recording-first native H.264 capture is implemented;
-  runtime dependencies, hardware re-verification, and offline mode remain.
+  runtime dependencies and hardware re-verification remain. Offline mode was
+  removed by D-021 (2026-09-28); offline rows below are historical.
 - **Scope source:** User decisions recorded in D-003 and D-004.
 - **Working copy:** `/home/xing/Documents/UMI`; preserve the existing Vive implementation and unrelated user changes.
 
@@ -106,9 +107,9 @@ extrinsics, or convert data to LeRobot.
 | --- | --- |
 | Action 4 exposes a usable Linux UVC device | Passed 2026-09-10: USB `2ca3:0023`, `uvcvideo`, capture node `/dev/video0`; MJPEG and H.264 at 720p30 and 1080p30 advertised. |
 | Online capture sustains the target 1080p/30 fps | Initial test passed 2026-09-10: valid 1920x1080 MJPEG frame plus 300 frames in 9.913 s with no reported errors. Longer endurance testing remains. |
-| Offline SD recording sustains 4K/60 fps with EIS off | Pending hardware test |
+| Offline SD recording sustains 4K/60 fps with EIS off | Removed by D-021 |
 | Vive and camera can operate without USB/resource interference | Initial combined launch passed 2026-09-10; longer simultaneous operation remains. |
-| Offline session stores MP4, pose bag, and metadata | Not implemented |
+| Offline session stores MP4, pose bag, and metadata | Removed by D-021 |
 | Online session records and displays image plus pose | Split MP4 plus pose-MCAP implementation is in progress; hardware acceptance is pending. |
 | `/vive/path` is not included in recordings | Implemented and covered by a static topic-contract test. |
 
@@ -118,8 +119,7 @@ extrinsics, or convert data to LeRobot.
    MP4 recording and a decoded, leaky best-effort RViz preview branch.
 2. Verify one online session directory containing H.264 MP4, frame timestamps,
    and a separate pose/TF MCAP without `/vive/path`.
-3. Verify offline 4K/60 fps recording, EIS-off configuration, file segmentation,
-   thermal behavior, and power/runtime constraints.
+3. ~~Verify offline 4K/60 fps recording~~ (offline mode removed by D-021).
 4. Define camera-node and session-recorder interfaces without introducing a
    temporal synchronization algorithm.
 5. Implement and verify the two separate launch/recording modes and RViz views.

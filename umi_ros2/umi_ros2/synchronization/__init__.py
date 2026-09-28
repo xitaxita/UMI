@@ -1,1 +1,1 @@
-"""Offline temporal calibration and synchronization helpers."""
+"""Post-recording temporal calibration and synchronization helpers."""

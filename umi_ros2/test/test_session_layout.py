@@ -1,9 +1,7 @@
-"""Tests for shared online and offline session organization."""
+"""Tests for online session organization."""
 
-from pathlib import Path
 
 from umi_ros2.session.layout import (
-    create_offline_session,
     create_online_session,
     read_session,
     register_recording,
@@ -29,15 +27,3 @@ def test_online_session_groups_calibration_and_episodes(tmp_path):
     metadata = read_session(session)
     assert metadata['status'] == 'complete'
     assert metadata['recordings'][0]['path'] == 'episodes/episode_0001'
-
-
-def test_offline_session_reserves_calibration_and_pose_path(tmp_path):
-    """Leave pose creation to rosbag while reserving offline metadata."""
-    session = tmp_path / 'offline_session_example'
-    create_offline_session(session)
-    assert (session / 'calibration').is_dir()
-    assert not (session / 'pose').exists()
-    metadata = read_session(session)
-    assert metadata['mode'] == 'offline'
-    assert metadata['layout']['pose'] == 'pose'
-    assert Path(session / metadata['layout']['calibration']).is_dir()

@@ -1,5 +1,30 @@
 # UMI — Coding context
 
+## Latest update — multi-task sessions, stage 1: offline mode removed (2026-09-28)
+
+Work is on branch `feature/multi-task-sessions`, following the confirmed plan
+in [multi-task sessions](docs/project/tasks/active/multi-task-sessions.md) and
+decision D-021 (one task per online session, `n` session switching with raw
+calibration copy, multi-session dataset export, no offline mode). D-021
+supersedes the offline D-010 and the offline boundary of D-015.
+
+Before branching, the unpushed `data` commit was rewritten to drop the 158 MB
+`DJI_20260917130727_0009_D.MP4` (file kept on disk, now in `.gitignore`), and
+the working tree was committed as a snapshot (old `vive_ros2` removal, URDF
+path diagnostic launch/RViz/task, the handoff task file, `recordings/` ignore).
+
+Stage 1 deletes `offline_record.launch.py`, `rviz/offline.rviz`,
+`create_offline_session()`, the `offline_rviz` asset path and the offline
+tests; replay, calibration and alignment had no offline-specific branches.
+The offline task moved to `tasks/archive/`; README, `project.md`,
+REQUIREMENTS, ARCHITECTURE and the Action 4 task no longer describe offline as
+current. Verification: ROS 2 Jazzy symlink build (stale offline symlinks in
+`build/` and `install/` had to be removed by hand), installed launch listing no
+longer contains the offline launch, 52/52 pytest, `git diff --check`, and
+flake8 on touched files (only pre-existing D100/I201 import-order warnings in
+untouched lines of `setup.py`/`launch_support.py`). Next: stage 2,
+`session.yaml` v2 with `task`.
+
 ## Latest update — multi-feature temporal calibration v2 (2026-09-21)
 
 The `calibrate_time` CLI now fuses all informative ArUco centre-X/Y, log-area
@@ -193,7 +218,7 @@ atomically update `session.yaml`.
   offline episode and calibration rules remain deliberately undecided.
 - Relevant decision: [D-015](docs/project/DECISIONS.md). Active tasks remain
   [temporal calibration](docs/project/tasks/active/temporal-calibration.md) and
-  [offline acquisition](docs/project/tasks/active/offline-acquisition.md).
+  [offline acquisition](docs/project/tasks/archive/offline-acquisition.md).
 - Verification: 28 tests pass in an isolated ROS/venv environment; focused
   flake8, ROS 2 Jazzy symlink build, installed online/offline launch argument
   parsing, and `git diff --check` pass. Hardware acquisition using the new
@@ -297,12 +322,12 @@ decode errors. This tests mux/preview/file checking, not the physical UVC input.
   ready for later manual Action 4 video placement.
 - **Status:** Offline launch/session changes are implemented and
   software-verified; hardware verification is pending. Online acquisition is paused.
-- **Task:** [Implement pose-only offline acquisition](docs/project/tasks/active/offline-acquisition.md)
+- **Task:** [Implement pose-only offline acquisition](docs/project/tasks/archive/offline-acquisition.md)
 - **Working copy:** `/home/xing/Documents/UMI`, with pre-existing user deletions and README changes preserved.
 
 ## Scope
 
-Current work is limited to offline computer-side Vive pose/TF recording and
+*Historical (offline mode removed by D-021, 2026-09-28).* Earlier work was limited to offline computer-side Vive pose/TF recording and
 RViz pose/path/TF display. It starts no camera process. The operator later adds
 `video.mp4` beside the `pose/` directory. It does not include online camera work,
 a temporal synchronization algorithm,
@@ -335,11 +360,11 @@ history and algorithm derivations stay in project records, not the README.
 | Dependency boundary | Keep pysurvive and ROS integration separate; pose adaptation remains hardware-independent. | [Architecture](docs/project/ARCHITECTURE.md) |
 | Existing worktree | Do not alter or restore unrelated deleted files. | Working-tree evidence at task start |
 | Camera hardware | Use DJI Action 4 rigidly mounted with the Vive Tracker on the same gripper; disable EIS. | User decision [D-003](docs/project/DECISIONS.md) |
-| Offline mode | Primary mode; record 4K/60 fps to microSD without USB while Linux records Vive pose and RViz displays pose/path/TF. | User decision [D-003](docs/project/DECISIONS.md) |
+| Offline mode | **Removed by D-021 (2026-09-28).** Formerly: primary mode; record 4K/60 fps to microSD without USB while Linux records Vive pose and RViz displays pose/path/TF. | User decision [D-003](docs/project/DECISIONS.md) |
 | Online mode | Use native H.264 USB capture at 1080p/30 without SD recording; write MP4 directly and publish only a decoded best-effort preview to RViz. | User decision [D-009](docs/project/DECISIONS.md) |
-| Recording boundary | Preserve offline MP4 plus pose bag and metadata. Online writes H.264 MP4 plus frame timestamps and a separate pose/TF MCAP in one session; never record `/vive/path`. | [D-008](docs/project/DECISIONS.md) |
+| Recording boundary | Online writes H.264 MP4 plus frame timestamps and a separate pose/TF MCAP in one session; never record `/vive/path`. | [D-008](docs/project/DECISIONS.md) |
 | Python build/runtime | Source ROS 2 Jazzy, activate `/home/xing/umi_ros_venv`, and use its `python` and `colcon`; keep `setuptools==68.1.2`. | User decision [D-005](docs/project/DECISIONS.md) |
-| Target code structure | All project-owned ROS runtime is consolidated in `umi_ros2`; shared, offline-only, and online-only responsibilities remain explicit, and one-shot processing stays outside ROS nodes. | User decision [D-007](docs/project/DECISIONS.md) |
+| Target code structure | All project-owned ROS runtime is consolidated in `umi_ros2`; shared and online responsibilities remain explicit, and one-shot processing stays outside ROS nodes. | User decision [D-007](docs/project/DECISIONS.md) |
 
 ## Current state and verification
 

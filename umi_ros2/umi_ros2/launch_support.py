@@ -13,7 +13,6 @@ def asset_paths():
         'vive_config': os.path.join(share, 'config', 'vive.yaml'),
         'camera_config': os.path.join(share, 'config', 'action4.yaml'),
         'online_rviz': os.path.join(share, 'rviz', 'online.rviz'),
-        'offline_rviz': os.path.join(share, 'rviz', 'offline.rviz'),
     }
 
 

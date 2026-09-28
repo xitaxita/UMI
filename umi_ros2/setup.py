@@ -23,7 +23,7 @@ setup(
     zip_safe=True,
     maintainer='UMI maintainers',
     maintainer_email='maintainer@example.com',
-    description='Shared online and offline ROS 2 runtime for UMI.',
+    description='Online acquisition and post-processing runtime for UMI.',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [

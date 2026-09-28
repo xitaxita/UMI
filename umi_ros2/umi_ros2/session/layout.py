@@ -1,4 +1,4 @@
-"""Create and update the shared online/offline recording layout."""
+"""Create and update the online session recording layout."""
 
 import tempfile
 from datetime import datetime
@@ -40,26 +40,6 @@ def create_online_session(recordings_root):
             'result': None,
         },
         'recordings': [],
-    })
-    return session
-
-
-def create_offline_session(session_output):
-    """Create the provisional pose-only offline session layout."""
-    session = Path(session_output).expanduser().resolve()
-    session.mkdir(parents=True, exist_ok=False)
-    (session / 'calibration').mkdir()
-    _write(session, {
-        'schema_version': 1,
-        'session_id': session.name,
-        'mode': 'offline',
-        'status': 'active',
-        'started_at': now_text(),
-        'ended_at': None,
-        'layout': {
-            'calibration': 'calibration',
-            'pose': 'pose',
-        },
     })
     return session
 

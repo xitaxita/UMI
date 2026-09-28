@@ -2,7 +2,7 @@
 
 ## Planned temporal calibration boundary (D-014)
 
-Temporal calibration is offline processing around one dedicated calibration
+Temporal calibration is post-recording processing around one dedicated calibration
 episode; it is not part of the Vive hardware adapter or the recording-critical
 camera path. Acquisition stores the original MP4, pose MCAP and timing metadata.
 A separate calibration executable decodes video frames, detects the configured
@@ -35,9 +35,8 @@ subscriptions. Every recording still owns a separate `pose/` bag. The keyboard
 executable is a separate service client so launch does not depend on child
 process stdin. Online UVC exposes no project-accessible Action 4 IMU stream.
 
-Offline currently creates `offline_session_<timestamp>/session.yaml` and an
-empty `calibration/` reservation before rosbag2 creates `pose/`. Its detailed
-episode and calibration layout remains deliberately unspecified.
+Offline acquisition was removed by D-021; `online_session_<timestamp>/` is the
+only session layout.
 
 ## Current online update (D-010)
 
@@ -70,7 +69,7 @@ are not saved as video timestamps. Earlier CSV descriptions are superseded.
 | `umi_ros2/umi_ros2/postprocess/` | Non-node frame/pose alignment and later dataset exporters. |
 | `umi_ros2/umi_ros2/common/` | ROS-independent image helpers reused by live and replay paths. |
 | `umi_ros2/umi_ros2/visualization/` | Replay-time path reconstruction. |
-| `umi_ros2/launch/` | Shared, online-only, offline-only, and replay entry points. |
+| `umi_ros2/launch/` | Shared, online, replay and diagnostic entry points. |
 | `umi_ros2/config/` and `umi_ros2/rviz/` | Device defaults and mode-specific visualization assets. |
 | `umi_ros2/test/` | Backend, image-helper, and launch-contract tests. |
 
@@ -95,10 +94,9 @@ the Vive hardware adapter.
 ## Planned camera acquisition boundary
 
 The rigid gripper assembly contains both the DJI Action 4 and Vive Tracker. The
-two camera modes are separate deployments:
+only camera deployment is online (the former offline microSD mode was removed
+by D-021):
 
-- Offline: Action 4 → 4K/60 fps MP4 on microSD; Vive → `/vive/pose` and TF →
-  rosbag2; RViz consumes pose/path/TF. No camera USB connection is used.
 - Online: Action 4 → USB/UVC → camera ROS 2 node at a target 1080p/30 fps;
   source images → H.264 MP4 plus frame timestamps, while Vive pose/TF → a
   separate MCAP rosbag2 directory in the same session; RViz consumes image and
@@ -144,12 +142,6 @@ shuts down so an incomplete session is not silently continued.
 The recorder starts after a configurable warm-up delay (five seconds by
 default), allowing the camera, Vive, RViz, and DDS discovery to stabilize before
 the accepted bag interval begins.
-
-`umi_ros2/launch/offline_record.launch.py` reuses Vive and pose/path RViz but
-starts no USB camera. It records only Vive pose and TF under
-`offline_session_<timestamp>/pose/`. The operator later copies the corresponding SD-card
-recording to `offline_session_<timestamp>/video.mp4`, matching the online session's
-top-level video-plus-pose boundary.
 
 `umi_ros2/launch/replay.launch.py` accepts either an online session root or one
 calibration/episode directory. The session-aware replay node orders calibration
@@ -202,21 +194,22 @@ never output directories.
 - Path history is process-local and resets whenever the node restarts. Tracking
   loss pauses pose/path updates but is not exposed on a dedicated status topic.
 
-## Consolidated online/offline structure
+## Consolidated package structure
 
 The three former project-owned ROS packages are consolidated into one `umi_ros2`
 application package. Focused runtime executables remain separate inside that
 package, while launch, configuration, RViz assets, and tests gain one owner.
 External packages such as GStreamer, RViz, and rosbag2 remain dependencies.
 
-Responsibilities are organized by mode rather than duplicated:
+The historical offline column of this table was removed with the offline mode
+(D-021). The remaining responsibilities are:
 
-| Layer | Shared by both modes | Offline only | Online only |
-| --- | --- | --- | --- |
-| Hardware | Vive pose acquisition and stable device selection | Action 4 records to microSD without USB | Action 4 native H.264 UVC capture through GStreamer |
-| Runtime | Pose/TF publication, session identity, metadata, health checks | Pose-only recording and pose/path RViz | JPEG bridge, live image preview, MP4 writer, and pose-only MCAP orchestration |
-| Data | Pose schema, calibration metadata, validation result, normalized session contract | MP4 import and offline image/pose alignment | H.264 MP4, frame timestamps, pose/TF MCAP, and live continuity checks |
-| User entry | Common naming, output layout, validation/reporting conventions | `offline_record` workflow | `online_view`, `online_record`, and online `replay` workflows |
+| Layer | Responsibilities |
+| --- | --- |
+| Hardware | Vive pose acquisition and stable device selection; Action 4 UVC capture through GStreamer |
+| Runtime | Pose/TF publication, session identity, metadata, health checks, live image preview, MP4 writer, and pose-only MCAP orchestration |
+| Data | Pose schema, calibration metadata, validation result, H.264 MP4, frame timestamps, pose/TF MCAP |
+| User entry | `online_view`, `online_record`, and `replay` workflows |
 
 Only components that continuously participate in ROS communication remain ROS
 nodes. One-shot video import, bag inspection, gap analysis, synchronization,

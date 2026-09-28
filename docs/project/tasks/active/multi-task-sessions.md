@@ -1,8 +1,9 @@
 # 多任务 session 重构（交接文档）
 
 - **任务标识：** `multi-task-sessions`
-- **状态：** 方案已与用户确认，尚未开始编码
-- **决策来源：** 待新增 D-021（`DECISIONS.md` 中最新决策写在文件顶部，当前最新为 D-020）
+- **状态：** 阶段 1 已完成（软件验证通过）；阶段 2～4 待做
+- **决策来源：** D-021（2026-09-28 已写入 `DECISIONS.md`）
+- **分支：** `feature/multi-task-sessions`
 - **交接日期：** 2026-09-28
 
 > 给接手的会话：开始前先读 `AGENTS.md`、`coding_context.md` 和本文件，再看相关源码及
@@ -67,6 +68,13 @@
    - `project.md` 中的离线部分（能力表中的“离线采集”行、“离线模式现状”一节、待办第 4 条）
    - `REQUIREMENTS.md`、`ARCHITECTURE.md` 和 `coding_context.md` 中的离线描述
 4. 构建、测试，然后提交：`Remove offline acquisition mode`。
+
+**阶段 1 结果（2026-09-28）：** 已完成。`offline.rviz` 只被离线 launch 和 `launch_support.py` 引用，
+已删除；回放 resolver、`calibrate_time`、`align_session` 中没有专门处理离线布局的分支。
+验证：colcon symlink build 通过（需手动删除 `build/`、`install/` 中指向已删文件的失效符号链接），
+安装后的 launch 列表不再含离线入口；pytest 52/52 通过；改动文件 flake8 仅剩未改动行的既有
+D100/I201 警告；`git diff --check` 通过。开分支前按用户要求改写了未推送的 `data` 提交以移除
+DJI 原始 MP4，并把工作区改动提交为快照。
 
 ### 阶段 2：session.yaml v2 与 task 字段
 

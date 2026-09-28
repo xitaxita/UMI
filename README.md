@@ -3,12 +3,9 @@
 本系统使用 DJI Action 4 采集视频，使用 Vive Tracker 采集夹爪位姿，并在
 RViz2 中显示相机预览、Tracker 位姿和运动路径。
 
-系统提供两种互相独立的采集方式：
-
-- 在线采集：Action 4 通过 USB 连接电脑；一次系统启动建立一个 session，
-  其中可以连续保存标定数据和多条普通 episode。
-- 离线采集：Action 4 将 4K/60 fps 视频保存到 microSD，电脑只记录 pose，
-  采集结束后再把视频复制到对应目录。
+系统只提供在线采集：Action 4 通过 USB 连接电脑；一次系统启动建立一个
+session，其中可以连续保存标定数据和多条普通 episode。（原离线采集模式已按
+D-021 删除。）
 
 ## 1. 已验证的运行环境
 
@@ -473,70 +470,12 @@ PYTHONPATH=~/Documents/UMI/umi_ros2 \
 坐标变换或导出格式时，可以只替换对应阶段。HDF5 与原生 LeRobot v3 exporter
 都读取同一份 `transformed/` 契约，互不依赖。
 
-## 17. 离线采集
+## 17. 检查 pose 记录
 
-离线模式下，Action 4 不连接 USB。相机把视频保存到 microSD，电脑只记录
-Vive pose 并在 RViz2 中显示路径。
-
-操作步骤：
-
-1. 将 Action 4 设置为 4K/60 fps，并关闭电子防抖。
-2. 确认 microSD 空间、电池和相机温度正常。
-3. 在 Action 4 上开始录像。
-4. 在电脑终端运行：
+每条标定或 episode 的 pose 都可以使用下面的命令检查：
 
 ```bash
-ros2 launch umi_ros2 offline_record.launch.py
-```
-
-5. 等待 RViz2 中的 Tracker 和路径正常显示。
-6. 完成采集动作。
-7. 在 Launch 终端按 `Ctrl+C`，等待 pose 文件写入完成。
-8. 停止 Action 4 录像。
-
-默认目录为 `recordings/offline_session_<时间>/pose/`。会话根目录还包含
-`session.yaml` 和为后续方案预留的 `calibration/`。
-
-也可以指定一个新的输出目录：
-
-```bash
-ros2 launch umi_ros2 offline_record.launch.py \
-  session_output:=/data/umi/offline_demo_01
-```
-
-不要使用已经包含数据的目录。
-
-## 18. 导入离线视频
-
-从 microSD 找到与该次 pose 对应的视频，复制到离线会话根目录并命名为
-`video.mp4`：
-
-```bash
-cp --no-clobber /media/xing/ACTION4/DCIM/100MEDIA/DJI_0001.MP4 \
-  recordings/offline_session_<时间>/video.mp4
-```
-
-最终目录应为：
-
-```text
-recordings/offline_session_<时间>/
-├── session.yaml
-├── calibration/
-├── video.mp4
-└── pose/
-    ├── metadata.yaml
-    └── *.mcap
-```
-
-确认复制完整且视频可以播放之前，不要删除 microSD 中的原文件。如果相机把
-一次录像拆分成多个文件，应保留全部原始分段。
-
-## 19. 检查 pose 记录
-
-在线和离线 pose 都可以使用下面的命令检查：
-
-```bash
-ros2 bag info recordings/<会话目录>/pose
+ros2 bag info recordings/<会话目录>/episodes/episode_<编号>/pose
 ```
 
 正常情况下应包含：
@@ -549,7 +488,7 @@ ros2 bag info recordings/<会话目录>/pose
 
 `/vive/path` 只用于 RViz2 显示，不会保存到数据中。
 
-## 20. 回放 session 或单条数据
+## 18. 回放 session 或单条数据
 
 回放整个在线 session：
 
@@ -594,7 +533,7 @@ ros2 launch umi_ros2 replay.launch.py \
 显示图像、Vive 路径和 TF。切换到下一条数据前会清空上一条路径。当前回放
 保留原始视频与 pose 的记录起点关系，但不会自动应用 `time_offset.json`。
 
-## 21. 只观察，不录制
+## 19. 只观察，不录制
 
 只检查在线相机和 Vive 显示：
 
@@ -608,7 +547,7 @@ ros2 launch umi_ros2 online_view.launch.py
 ros2 launch umi_ros2 vive.launch.py
 ```
 
-## 22. 常见问题
+## 20. 常见问题
 
 ### 没有相机画面
 
@@ -638,12 +577,11 @@ ros2 launch umi_ros2 vive.launch.py
 4. 确认标定 episode 同时包含视频和 pose。
 5. 重新录制标定 episode，不要手工修改失败结果。
 
-## 23. 当前限制
+## 21. 当前限制
 
 - 在线连续 episode 和时间标定仍需 Action 4 真机验收。
 - 正式后处理会自动读取 accepted 时间差并应用到普通 episode；回放显示仍不
   应用该时间差。
-- 离线 SD 视频尚不能自动导入或自动完成时间标定。
 - 相机内参和相机到 Tracker 的刚性外参尚未完成。
 - 回放尚未自动应用标定得到的 `time_offset.json`。
 - HDF5 和 LeRobot v3 导出已经实现并完成软件级真实数据诊断，但尚未使用

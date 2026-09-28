@@ -42,22 +42,6 @@ def test_online_recorded_topic_contract():
     assert "ros2', 'bag', 'record'" not in source
 
 
-def test_offline_record_is_pose_only():
-    """Keep the offline entry independent of camera runtime."""
-    path = LAUNCH_DIR / 'offline_record.launch.py'
-    source = path.read_text(encoding='utf-8')
-    topics = assigned_tuple(path, 'RECORDED_TOPICS')
-    assert topics == ('/vive/pose', '/tf', '/tf_static')
-    assert 'camera_nodes' not in source
-    assert 'usb_cam' not in source
-    assert '/action4/' not in source
-    assert "'session_output'" in source
-    assert "session_output, 'pose'" in source
-    assert "name='umi_offline_pose_recorder'" in source
-    assert 'create_offline_session' in source
-    assert 'offline_session_' in source
-
-
 def test_camera_uses_h264_output_capture_contract():
     """Use the project's worker-owning ROS preview node."""
     support = (
@@ -70,15 +54,26 @@ def test_camera_uses_h264_output_capture_contract():
     assert 'preview_topic: /action4/image_preview' in config
 
 
-def test_recording_launches_keep_warmup():
-    """Online warms the stream; offline retains its pose startup delay."""
+def test_recording_launch_keeps_warmup():
+    """Online warms the stream inside the camera node."""
     online = (LAUNCH_DIR / 'online_record.launch.py').read_text()
-    offline = (LAUNCH_DIR / 'offline_record.launch.py').read_text()
     assert "default_value='5.0'" in online
-    assert "default_value='3.0'" in offline
     assert 'ParameterValue(warmup_seconds, value_type=float)' in online
     assert 'TimerAction' not in online
-    assert 'TimerAction(period=warmup_seconds' in offline
+
+
+def test_offline_mode_is_removed():
+    """D-021: online acquisition is the only recording mode."""
+    assert not (LAUNCH_DIR / 'offline_record.launch.py').exists()
+    assert not (PACKAGE_ROOT / 'rviz' / 'offline.rviz').exists()
+    support = (
+        PACKAGE_ROOT / 'umi_ros2' / 'launch_support.py'
+    ).read_text(encoding='utf-8')
+    layout = (
+        PACKAGE_ROOT / 'umi_ros2' / 'session' / 'layout.py'
+    ).read_text(encoding='utf-8')
+    assert 'offline' not in support
+    assert 'offline' not in layout
 
 
 def test_replay_launch_uses_auto_detected_separated_artifacts():

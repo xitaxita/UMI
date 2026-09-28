@@ -1,5 +1,36 @@
 # UMI — Development decisions
 
+## D-021: One task per online session, multi-session datasets, no offline mode
+
+- **Status:** Accepted by the user on 2026-09-28. Implementation is staged in
+  [multi-task sessions](tasks/active/multi-task-sessions.md).
+- **Offline acquisition is removed** with no compatibility entry point. This
+  supersedes the offline-acquisition D-010 ("Focus on pose-only offline
+  acquisition") and the offline parts of D-015. Online acquisition is the only
+  recording mode.
+- **Session = one task.** A session holds any number of episodes for exactly
+  one natural-language task, stored only in `session.yaml` as top-level `task`
+  (later used directly as the LeRobot language task). Changing task means a new
+  session. Session directory names stay `online_session_<timestamp>` and never
+  contain the task.
+- `task:=` at launch is optional; an empty task produces a clear terminal
+  warning and may be filled in afterwards with a dedicated tool.
+- **Sessions are self-contained.** No runtime or post-processing step depends
+  on another session.
+- **Switching sessions in one launch:** keyboard `n` switches session without
+  restarting the camera, Vive or pose subscription. Ctrl+C and relaunching with
+  a new `task:=` yields an identical session structure.
+- **Calibration within one launch:** on switch, the previous session's raw
+  calibration data (`video.mp4`, `video.timing.json`, `video.validation.json`,
+  `pose/`) is copied into the new session, keeping its sequence number, and
+  `calibrate_time` is rerun there. Derived results are never copied, offsets
+  are never shared, and post-processing never looks up calibration across
+  sessions. A `copied_from` field is provenance only. Across launches nothing is
+  copied; a new calibration must be recorded (unchanged D-014 rule).
+- **Dataset merge:** each session is calibrated, aligned and transformed
+  independently; sessions are merged only at export. Every export rebuilds the
+  dataset from the given session list; there is no incremental append.
+
 ## D-020: Define the measured Tracker-to-gripper TCP extrinsic
 
 - **Status:** Accepted on 2026-09-21.
@@ -287,7 +318,7 @@ No kernel module was changed or loaded. Retain diagnostic patch as inactive.
 
 ## D-010: Focus on pose-only offline acquisition
 
-- **Status:** Accepted
+- **Status:** Superseded by D-021 on 2026-09-28 (offline mode removed).
 - **Date:** 2026-09-11
 - **Source:** The user requested an offline-first implementation and paused
   consideration of the online camera path.
@@ -306,7 +337,8 @@ No kernel module was changed or loaded. Retain diagnostic patch as inactive.
 
 ## D-015: Use an explicit session-level recording layout
 
-- **Status:** Accepted
+- **Status:** Accepted; offline boundary superseded and one-session-per-launch
+  rule amended by D-021 (2026-09-28).
 - **Date:** 2026-09-13
 - **Source:** The user requested a shared session organization for online and
   offline acquisition, while leaving the detailed offline episode design open.

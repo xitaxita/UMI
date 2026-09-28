@@ -1,7 +1,7 @@
 # Implement pose-only offline acquisition
 
 - **Task identity:** `offline-acquisition`
-- **Status:** Implemented and software-verified; hardware acceptance pending
+- **Status:** Archived 2026-09-28 — offline mode removed by D-021 (code deleted; never hardware-accepted)
 - **Decision source:** D-010
 
 ## Goal

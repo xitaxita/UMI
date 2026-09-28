@@ -2,7 +2,7 @@
 <package format="3">
   <name>umi_ros2</name>
   <version>0.2.0</version>
-  <description>Shared online and offline ROS 2 runtime for UMI.</description>
+  <description>Online acquisition and post-processing runtime for UMI.</description>
   <maintainer email="maintainer@example.com">UMI maintainers</maintainer>
   <license>Apache-2.0</license>
 
