@@ -3,6 +3,9 @@ build/
 install/
 log/
 
+# Locally captured datasets
+recordings/
+
 # Python generated output
 __pycache__/
 *.py[cod]
@@ -13,3 +16,6 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+# Large local raw media
+/DJI_*.MP4
