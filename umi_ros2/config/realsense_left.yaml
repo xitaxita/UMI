@@ -1,0 +1,20 @@
+# RealSense D435i left color stream; pass these fields to RealSenseSource.
+# Select RGB by serial and USB interface; by-id index0 can point to depth.
+camera_id: left
+image_field: left_image
+serial: '254343064631'
+color_usb_interface: '03'
+device: /dev/v4l/by-id/usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254343064631-video-index0
+input_format: YUYV
+width: 640
+height: 480
+fps: 30
+io_mode: mmap
+preview_width: 320
+preview_height: 240
+preview_topic: /realsense/left/image_preview
+frame_id: realsense_left_camera
+bitrate_kbps: 8000
+warmup_seconds: 5.0
+startup_timeout_seconds: 30.0
+status_path: /tmp/umi_realsense_left_status.json

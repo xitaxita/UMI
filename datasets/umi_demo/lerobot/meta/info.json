@@ -1,0 +1,125 @@
+{
+    "codebase_version": "v3.0",
+    "robot_type": "umi_vive_action4",
+    "total_episodes": 8,
+    "total_frames": 3653,
+    "total_tasks": 1,
+    "chunks_size": 1000,
+    "data_files_size_in_mb": 100,
+    "video_files_size_in_mb": 200,
+    "fps": 30,
+    "splits": {
+        "train": "0:8"
+    },
+    "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+    "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+    "features": {
+        "observation.images.action4": {
+            "dtype": "video",
+            "shape": [
+                3,
+                1080,
+                1920
+            ],
+            "names": [
+                "channels",
+                "height",
+                "width"
+            ],
+            "info": {
+                "video.height": 1080,
+                "video.width": 1920,
+                "video.codec": "h264",
+                "video.pix_fmt": "yuv420p",
+                "video.is_depth_map": false,
+                "video.fps": 30,
+                "video.channels": 3,
+                "has_audio": false
+            }
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                7
+            ],
+            "names": [
+                "x",
+                "y",
+                "z",
+                "qx",
+                "qy",
+                "qz",
+                "qw"
+            ]
+        },
+        "umi.source_frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "frame_index"
+            ]
+        },
+        "umi.video_pts_seconds": {
+            "dtype": "float64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "seconds"
+            ]
+        },
+        "umi.pose_query_time_seconds": {
+            "dtype": "float64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "seconds"
+            ]
+        },
+        "umi.source_session": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    }
+}

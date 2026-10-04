@@ -1,5 +1,7 @@
 """Small terminal client for toggling online episode services."""
 
+import json
+
 from rcl_interfaces.srv import SetParameters
 
 import rclpy
@@ -22,8 +24,10 @@ class EpisodeKeyboard(Node):
         self._recording_kind = None
         self._start = self.create_client(
             Trigger, f'{CAMERA_NODE}/start_episode')
-        self._calibration = self.create_client(
-            Trigger, f'{CAMERA_NODE}/start_calibration')
+        self._camera_list = self.create_client(
+            Trigger, f'{CAMERA_NODE}/list_cameras')
+        self._calibration = None
+        self._calibration_retry = False
         self._stop = self.create_client(
             Trigger, f'{CAMERA_NODE}/stop_episode')
         self._new_session = self.create_client(
@@ -61,11 +65,49 @@ class EpisodeKeyboard(Node):
             if result.success and not task:
                 print('Warning: the new session has an empty task; fill it '
                       'in later with set_session_task')
+            if result.success:
+                self._calibration_retry = False
+
+    def _select_calibration(self):
+        """Choose a live registered camera before starting its calibration."""
+        result = self._call(self._camera_list, Trigger.Request())
+        if result is None or not result.success:
+            return False
+        try:
+            cameras = json.loads(result.message)
+            choices = {str(camera['number']): camera for camera in cameras}
+        except (ValueError, KeyError, TypeError):
+            print('无法读取相机列表')
+            return False
+        if not choices:
+            print('没有可标定的相机')
+            return False
+        print('选择时序标定相机：')
+        for number, camera in choices.items():
+            print(f"  {number}: {camera['camera_id']} / "
+                  f"{camera['image_field']}")
+        print('只做左右、前后、上下平移，保持姿态固定，标记全程可见。\n'
+              'wrist：固定 ArUco 标记，移动相机与 Tracker 组件。\n'
+              'left：固定相机，将标记与 Tracker/夹爪固定在一起并平移。')
+        while True:
+            number = input('相机编号 + Enter 开始录制（q 返回）：').strip()
+            if number == 'q':
+                return False
+            if number in choices:
+                break
+            print('编号无效，请重新选择')
+        previous = self._calibration
+        self._calibration = self.create_client(
+            Trigger, choices[number]['start_service'])
+        if previous is not None:
+            self.destroy_client(previous)
+        self._calibration_retry = True
+        return True
 
     def run(self):
         """Wait for services and accept line-oriented terminal controls."""
         print(
-            'Idle: Enter starts episode, c + Enter starts calibration, '
+            'Idle: Enter starts episode, c + Enter selects a camera, '
             'n + Enter switches to a new session/task | '
             'Recording: Enter stops | q + Enter leaves keyboard control')
         while rclpy.ok():
@@ -83,19 +125,34 @@ class EpisodeKeyboard(Node):
                 client = self._stop
                 requested_kind = None
             elif key == 'c':
+                if not self._select_calibration():
+                    continue
+                client = self._calibration
+                requested_kind = 'calibration'
+            elif key == '' and getattr(self, '_calibration_retry', False):
                 client = self._calibration
                 requested_kind = 'calibration'
             else:
+                if key:
+                    print('请输入 Enter、c、n 或 q')
+                    continue
                 client = self._start
                 requested_kind = 'episode'
             result = self._call(client, Trigger.Request())
             if result is None:
                 continue
             print(result.message)
-            if result.success:
+            stopped_kind = self._recording_kind
+            if result.success or client is self._stop:
                 self._recording = not self._recording
                 self._recording_kind = (
                     requested_kind if self._recording else None)
+            if client is self._stop and stopped_kind == 'calibration':
+                self._calibration_retry = not result.success
+                if self._calibration_retry:
+                    print('Enter 重录当前相机；c 选择相机；n 换 session；q 退出')
+            elif requested_kind == 'calibration':
+                self._calibration_retry = not result.success
 
 
 def main(args=None):

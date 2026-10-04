@@ -10,10 +10,17 @@ import pytest
 from umi_ros2.postprocess.transform_session import transform_item
 
 
-def test_transform_item_writes_versioned_export_contract(tmp_path):
+@pytest.mark.parametrize('recording_reference', [False, True])
+def test_transform_item_writes_versioned_export_contract(
+        tmp_path, recording_reference):
     """Persist transformed arrays with an explicit contract version."""
     source = tmp_path / 'aligned' / 'episode_0001'
     source.mkdir(parents=True)
+    reference = ({
+        'reference_position_xyz': np.array([1.0, 0.0, 0.0]),
+        'reference_orientation_xyzw': np.array([0.0, 0.0, 0.0, 1.0]),
+        'reference_pose_time_seconds': np.asarray(9.5),
+    } if recording_reference else {})
     np.savez_compressed(
         source / 'aligned_frames.npz',
         frame_index=np.array([0, 1]),
@@ -23,6 +30,7 @@ def test_transform_item_writes_versioned_export_contract(tmp_path):
         valid=np.array([True, True]),
         position_xyz=np.array([[2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]),
         orientation_xyzw=np.array([[0.0, 0.0, 0.0, 1.0]] * 2),
+        **reference,
     )
     (source / 'alignment.json').write_text(json.dumps({
         'source_episode': '/raw/episodes/episode_0001',
@@ -30,11 +38,18 @@ def test_transform_item_writes_versioned_export_contract(tmp_path):
     }), encoding='utf-8')
     destination = tmp_path / 'transformed' / 'episode_0001'
     report = transform_item(source, destination)
-    assert report['reference_frame_index'] == 0
+    assert report['reference_frame_index'] == (
+        -1 if recording_reference else 0)
+    assert report['reference_definition'] == (
+        'first_recorded_tcp_pose_after_start' if recording_reference
+        else 'first_valid_aligned_video_frame_pose')
+    if recording_reference:
+        assert report['reference_pose_time_seconds'] == 9.5
     with np.load(destination / 'episode_frames.npz') as result:
         assert int(result['contract_version']) == 1
+        start = 1.0 if recording_reference else 0.0
         np.testing.assert_allclose(result['position_xyz'], [
-            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+            [start, 0.0, 0.0], [start + 1, 0.0, 0.0]])
 
 
 def test_hdf5_export_keeps_image_pose_counts_equal(tmp_path, monkeypatch):

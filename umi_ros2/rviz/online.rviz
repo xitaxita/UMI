@@ -28,6 +28,18 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /vive/path
+    - Class: rviz_default_plugins/Pose
+      Enabled: true
+      Name: Vive TCP Pose
+      Shape: Axes
+      Axes Length: 0.2
+      Axes Radius: 0.02
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vive/pose
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
@@ -45,6 +57,15 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /action4/image_preview
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: RealSense Left Preview
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /realsense/left/image_preview
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

@@ -17,6 +17,7 @@ from sensor_msgs.msg import Image
 
 from std_srvs.srv import Trigger
 
+from umi_ros2.postprocess.align_session import video_frame_times
 from umi_ros2.visualization.replay_source import (
     relative_start_seconds,
     resolve_replay_items,
@@ -36,13 +37,17 @@ class SessionReplayNode(Node):
         self.declare_parameter('preview_width', 1280)
         self.declare_parameter('preview_height', 720)
         self.declare_parameter('between_items_seconds', 1.0)
+        self.declare_parameter('use_calibration', False)
+        self.declare_parameter('loop', False)
         input_path = str(self.get_parameter('input_path').value)
         self._rate = float(self.get_parameter('playback_rate').value)
         if not input_path:
             raise ValueError('input_path must not be empty')
         if self._rate <= 0:
             raise ValueError('playback_rate must be greater than zero')
-        self._items = resolve_replay_items(input_path)
+        self._calibrated = bool(self.get_parameter('use_calibration').value)
+        self._loop = bool(self.get_parameter('loop').value)
+        self._items = resolve_replay_items(input_path, self._calibrated)
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._width = int(self.get_parameter('preview_width').value)
         self._height = int(self.get_parameter('preview_height').value)
@@ -50,11 +55,11 @@ class SessionReplayNode(Node):
             raise ValueError('preview width and height must be positive')
         self._between_items = float(
             self.get_parameter('between_items_seconds').value)
-        self._publisher = self.create_publisher(
-            Image,
-            str(self.get_parameter('preview_topic').value),
-            qos_profile_sensor_data,
-        )
+        self._image_publishers = {
+            video.preview_topic: self.create_publisher(
+                Image, video.preview_topic, qos_profile_sensor_data)
+            for item in self._items for video in item.videos
+        }
         self._reset_client = self.create_client(
             Trigger, '/vive_replay_path_node/reset')
         self._clock_condition = threading.Condition()
@@ -98,21 +103,25 @@ class SessionReplayNode(Node):
 
     def _run(self):
         try:
-            for index, item in enumerate(self._items, start=1):
-                if self._stop.is_set():
+            while not self._stop.is_set():
+                for index, item in enumerate(self._items, start=1):
+                    if self._stop.is_set():
+                        break
+                    self._reset_path()
+                    self.get_logger().info(
+                        f'Replaying {index}/{len(self._items)}: {item.path}')
+                    self._play_item(item)
+                    if index < len(self._items) or self._loop:
+                        self._stop.wait(self._between_items)
+                if not self._loop:
                     break
-                self._reset_path()
-                self.get_logger().info(
-                    f'Replaying {index}/{len(self._items)}: {item.path}')
-                self._play_item(item)
-                if index < len(self._items):
-                    self._stop.wait(self._between_items)
         except Exception as error:
             self._error = error
             self.get_logger().error(f'Replay failed: {error}')
 
     def _play_item(self, item):
         video_delay, pose_delay = relative_start_seconds(item)
+        streams = self._open_streams(item)
         command = [
             'ros2', 'bag', 'play', str(item.pose_path),
             '--clock', '120', '--rate', str(self._rate),
@@ -122,39 +131,75 @@ class SessionReplayNode(Node):
         self.get_logger().info(
             f'Recorded starts: video +{video_delay:.3f}s, '
             f'pose +{pose_delay:.3f}s from common start')
+        with self._clock_condition:
+            self._clock_ns = None
         self._bag_process = subprocess.Popen(command)
-        capture = cv2.VideoCapture(str(item.video_path))
-        if not capture.isOpened():
-            self._stop_bag()
-            raise RuntimeError(f'cannot open video: {item.video_path}')
-        published_frames = 0
-        skipped_frames = 0
+        published_frames = {entry['video'].camera_id: 0 for entry in streams}
         try:
-            while not self._stop.is_set():
-                ok, frame = capture.read()
-                if not ok:
-                    break
-                pts = max(0.0, capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0)
-                stamp_ns = item.video_start_ns + int(pts * 1e9)
+            while streams and not self._stop.is_set():
+                entry = min(streams, key=lambda value: value['stamp_ns'])
+                stamp_ns = entry['stamp_ns']
                 if not self._wait_until_clock(stamp_ns):
                     break
-                with self._clock_condition:
-                    clock_ns = self._clock_ns
-                frame_period_ns = int(1_000_000_000 / 30)
-                if clock_ns - stamp_ns > 2 * frame_period_ns:
-                    skipped_frames += 1
-                    continue
-                self._publish(frame, stamp_ns)
-                published_frames += 1
+                self._publish(entry['frame'], stamp_ns, entry['video'])
+                published_frames[entry['video'].camera_id] += 1
+                if not self._advance_stream(entry):
+                    streams.remove(entry)
+        except Exception:
+            self._stop_bag()
+            raise
         finally:
-            capture.release()
+            for entry in streams:
+                entry['capture'].release()
         return_code = self._wait_bag()
         self.get_logger().info(
-            f'Replay item complete: published {published_frames} preview '
-            f'frames, skipped {skipped_frames} pre-roll/late frames')
+            f'Replay item complete: published {published_frames} frames')
         if not self._stop.is_set() and return_code != 0:
             raise RuntimeError(
                 f'pose bag playback exited with code {return_code}')
+
+    def _open_streams(self, item):
+        """Prepare accurate PTS and the first decoded frame of each camera."""
+        streams = []
+        try:
+            for video in item.videos:
+                times = video_frame_times(video.video_path)
+                capture = cv2.VideoCapture(str(video.video_path))
+                if not capture.isOpened():
+                    raise RuntimeError(
+                        f'cannot open video: {video.video_path}')
+                entry = {'video': video, 'times': times, 'capture': capture,
+                         'index': -1}
+                streams.append(entry)
+                if not self._advance_stream(entry):
+                    raise RuntimeError(
+                        f'cannot decode video: {video.video_path}')
+                self.get_logger().info(
+                    f'{video.camera_id}: {len(times)} source frames, '
+                    f'offset {video.offset_seconds * 1000:.2f} ms, '
+                    f'topic {video.preview_topic}')
+        except Exception:
+            for entry in streams:
+                entry['capture'].release()
+            raise
+        return streams
+
+    def _advance_stream(self, entry):
+        index = entry['index'] + 1
+        if index >= len(entry['times']):
+            entry['capture'].release()
+            return False
+        ok, frame = entry['capture'].read()
+        if not ok:
+            raise RuntimeError(
+                f'video ended before PTS list: {entry["video"].video_path}')
+        video = entry['video']
+        entry['index'] = index
+        entry['frame'] = frame
+        entry['stamp_ns'] = (video.start_ns
+                             + int((entry['times'][index]
+                                    + video.offset_seconds) * 1e9))
+        return True
 
     def _wait_until_clock(self, target_ns):
         """Wait until bag time reaches a video frame's absolute timestamp."""
@@ -168,11 +213,13 @@ class SessionReplayNode(Node):
                 self._clock_condition.wait(timeout=0.1)
         return False
 
-    def _publish(self, frame, stamp_ns):
+    def _publish(self, frame, stamp_ns, video):
         if frame.shape[1] != self._width or frame.shape[0] != self._height:
             frame = cv2.resize(frame, (self._width, self._height))
         message = Image()
-        message.header.frame_id = self._frame_id
+        message.header.frame_id = (
+            self._frame_id if video.camera_id == 'wrist'
+            else f'{video.camera_id}_camera')
         message.header.stamp.sec = stamp_ns // 1_000_000_000
         message.header.stamp.nanosec = stamp_ns % 1_000_000_000
         message.height = self._height
@@ -181,7 +228,7 @@ class SessionReplayNode(Node):
         message.is_bigendian = False
         message.step = self._width * 3
         message.data = frame.tobytes()
-        self._publisher.publish(message)
+        self._image_publishers[video.preview_topic].publish(message)
 
     def _wait_bag(self):
         while self._bag_process.poll() is None and not self._stop.wait(0.1):

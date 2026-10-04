@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "source_aligned_directory": "/home/xing/Documents/UMI/datasets/umi_demo.partial/processed/online_session_20260929_211408_383321/aligned/episodes/episode_0006",
+  "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0006",
+  "source_video": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0006/video.mp4",
+  "video_to_pose_offset_seconds": -0.09236435301542656,
+  "offset_source": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/calibration/calibration_002/time_offset.json",
+  "frame_count": 483,
+  "valid_frame_count": 483,
+  "reference_definition": "first_valid_aligned_video_frame_pose",
+  "transform_convention": "T_episode_i = inverse(T_world_reference) * T_world_i",
+  "reference_frame_index": 0,
+  "reference_position_xyz": [
+    0.16443672672405327,
+    0.1353149223379324,
+    -0.052539843842031246
+  ],
+  "reference_orientation_xyzw": [
+    0.16466019004276028,
+    0.06402349504421716,
+    -0.37175212121230566,
+    -0.9113662130403762
+  ],
+  "raw_data_modified": false
+}

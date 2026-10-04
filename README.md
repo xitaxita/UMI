@@ -1,9 +1,9 @@
 # UMI 数据采集系统使用手册
 
-本系统使用 DJI Action 4 采集视频，使用 Vive Tracker 采集夹爪位姿，并在
-RViz2 中显示相机预览、Tracker 位姿和运动路径。
+本系统使用 DJI Action 4 和左侧 RealSense D435i 采集两路彩色视频，使用
+Vive Tracker 采集夹爪位姿，并在 RViz2 中显示两路预览、Tracker 位姿和路径。
 
-系统只提供在线采集：Action 4 通过 USB 连接电脑；一次系统启动建立一个
+系统只提供在线采集：两台相机通过 USB 连接电脑；一次系统启动建立一个
 session，其中可以连续保存标定数据和多条普通 episode。（原离线采集模式已按
 D-021 删除。）
 
@@ -14,7 +14,7 @@ D-021 删除。）
 - Ubuntu 24.04 LTS（当前机器为 24.04.5）。
 - ROS 2 Jazzy Desktop。
 - Python 3.12。
-- Python 虚拟环境：`~/umi_ros_venv`，创建时启用系统 Python 包。
+- Python 虚拟环境：`~/Documents/UMI/.venv`，创建时启用系统 Python 包。
 - `colcon-common-extensions==0.3.0`。
 - `setuptools==68.1.2`。不要直接升级到新版；当前 ROS 2 Python 构建链与
   `setuptools==84.0.0` 不兼容。
@@ -65,9 +65,10 @@ rosdep update
 必须带 `--system-site-packages`：
 
 ```bash
-python3 -m venv --system-site-packages ~/umi_ros_venv
+cd ~/Documents/UMI
+python3 -m venv --system-site-packages .venv
 source /opt/ros/jazzy/setup.bash
-source ~/umi_ros_venv/bin/activate
+source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install \
   setuptools==68.1.2 \
@@ -81,18 +82,21 @@ python -m pip install \
 
 ```bash
 which python
-which colcon
 python --version
+python -m colcon --help >/dev/null
 python -c "import rclpy, gi, cv2, pysurvive; print('environment OK')"
+command -v ffprobe
 ```
 
-前两个路径都应位于 `~/umi_ros_venv/bin/`，Python 应为 3.12。以后始终先
+`which python` 应指向 `~/Documents/UMI/.venv/bin/python`，Python 应为 3.12。以后始终先
 source ROS 2，再激活 venv；顺序不要颠倒。
+`command -v ffprobe` 应返回可执行文件路径；它由系统 `ffmpeg` 软件包提供，
+时序标定需要它读取 MP4 每帧时间戳。
 
 ### LeRobot v3 独立环境
 
 LeRobot 的 NumPy、setuptools 和深度学习依赖与当前 ROS 2 Jazzy 环境不同，
-不要把 LeRobot 安装进 `~/umi_ros_venv`。需要导出 LeRobot v3 时，另建一个
+不要把 LeRobot 安装进项目 `.venv`。需要导出 LeRobot v3 时，另建一个
 Python 3.12 环境：
 
 ```bash
@@ -114,7 +118,7 @@ ROS 的构建工具链。
 ```bash
 cd ~/Documents/UMI
 source /opt/ros/jazzy/setup.bash
-source ~/umi_ros_venv/bin/activate
+source .venv/bin/activate
 rosdep install --from-paths umi_ros2 --ignore-src -r -y
 python -m colcon build --packages-select umi_ros2 --symlink-install
 source install/setup.bash
@@ -125,7 +129,12 @@ source install/setup.bash
 ```bash
 ros2 pkg executables umi_ros2
 ros2 launch umi_ros2 online_record.launch.py --show-args
+head -n 1 install/umi_ros2/lib/umi_ros2/vive_pose_node
 ```
+
+最后一行应显示项目 `.venv/bin/python`。如果显示 `/usr/bin/python3`，请确认
+激活 `.venv` 后重新运行上面的 `python -m colcon build`；仅显示 `(.venv)` 的
+终端提示符不会改变已经生成的 ROS 节点脚本的解释器。
 
 每次修改 Python 或 launch/config 文件后，建议重新执行 build 和
 `source install/setup.bash`。`--symlink-install` 会让 Python 源码修改更方便，
@@ -138,7 +147,7 @@ ros2 launch umi_ros2 online_record.launch.py --show-args
 ```bash
 cd ~/Documents/UMI
 source /opt/ros/jazzy/setup.bash
-source ~/umi_ros_venv/bin/activate
+source .venv/bin/activate
 source install/setup.bash
 ```
 
@@ -164,9 +173,9 @@ v4l2-ctl --list-devices
 v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
-当前 Action 4 已验证的 Webcam 输入是 MJPEG 1920×1080/30 fps；系统将其编码
-为 H.264 MP4。相机若不是 `/dev/video0`，需要修改
-`umi_ros2/config/action4.yaml`。
+当前 Action 4 输入是 MJPEG 1920×1080/30 fps，D435i 左侧彩色输入是 YUYV
+640×480/30 fps；两路分别编码为 H.264 MP4。默认配置使用各设备序列号对应的
+`/dev/v4l/by-id` 链接，避免插拔后 `/dev/videoN` 变化。
 
 可以用以下命令做一次环境级自检：
 
@@ -194,6 +203,24 @@ ros2 launch umi_ros2 vive.launch.py
 ros2 topic hz /vive/pose
 ```
 
+`vive.launch.py`、`online_view.launch.py` 和 `online_record.launch.py` 都会
+分别启动 `vive_pose_node` 与 `vive_path_node` 两个进程。pose 和 TF 的目标
+发布频率为 90 Hz；Path 节点缓存最新 pose，每秒采样并更新轨迹 30 次，
+最多保留 10000 个显示点。显示抽样不会降低 MCAP 中原始 pose 的记录频率。
+
+轨迹配置位于同一 `vive.yaml` 的 `vive_path_node` 部分：
+
+```yaml
+vive_path_node:
+  ros__parameters:
+    pose_topic: vive/pose
+    path_topic: vive/path
+    sample_hz: 30.0
+    max_path_points: 10000
+```
+
+修改采样频率后重启 launch 生效。没有新 pose 时不会重复追加轨迹点。
+
 确认 pose 持续更新后，按 `Ctrl+C` 结束检查。
 
 正常采集不需要使用 `--force-calibrate`。只有首次配置、移动过基站、标定文件
@@ -211,9 +238,15 @@ libsurvive_args: "--force-calibrate"
 固定外参得到的。这个外参**只写在** `umi_ros2/config/vive.yaml` 中：
 
 ```yaml
-tracker_to_tcp_translation_m: [0.0, -0.080371453, 0.194957425]   # 米
-tracker_to_tcp_rotation_xyzw: [0.628736470, -0.628736470, 0.323559039, 0.323559039]
+tracker_to_tcp_translation_m: [0.0, -0.194899844, 0.080510987]   # 米
+tracker_to_tcp_rotation_xyzw: [0.457263310, 0.0, 0.0, 0.889331359]
 ```
+
+当前值于 2026-10-04 按
+`/media/xing/zijun/User/Documents/课题组/UMI/3Dprint/UMI/co2_in_co1.txt`
+更新，co1 对应 `vive_tracker`、co2 对应 `gripper_tcp`，直接使用文件的
+`translation_m` 和 `quaternion_xyzw`。项目根目录同名 txt 是历史测量文件。
+配置更新只对重启后的新 TCP 发布生效，已录制 raw pose 不会自动改成新外参。
 
 - 节点启动时读取并检查：缺少、个数不对、不是有限数或四元数不是单位长度时，
   节点直接报错退出，不会用默认值。每个数都要写成带小数点的形式。
@@ -222,7 +255,7 @@ tracker_to_tcp_rotation_xyzw: [0.628736470, -0.628736470, 0.323559039, 0.3235590
 - 运行中也可以临时调整，通过检查后下一帧起生效：
 
 ```bash
-ros2 param set /vive_pose_node tracker_to_tcp_translation_m "[0.0, -0.08, 0.195]"
+ros2 param set /vive_pose_node tracker_to_tcp_translation_m "[0.0, -0.194899844, 0.080510987]"
 ```
 
   这样修改**不会写回** `vive.yaml`，重启后恢复文件中的值；不合法的值会被拒绝，
@@ -231,16 +264,20 @@ ros2 param set /vive_pose_node tracker_to_tcp_translation_m "[0.0, -0.08, 0.195]
 
 ## 8. 在线采集前准备
 
-1. 用 USB 将 Action 4 连接电脑。
-2. 在相机上选择 Webcam 模式。
-3. 运行下面的命令确认相机设备：
+1. 用 USB 连接 Action 4 和 D435i；D435i 使用 USB 3 连接。
+2. 在 Action 4 上选择 Webcam 模式。
+3. 运行下面的命令确认两台相机设备：
 
 ```bash
 v4l2-ctl --list-devices
 ```
 
-4. 确认相机是 `/dev/video0`。如果不是，修改
-   `umi_ros2/config/action4.yaml` 中的 `video_device`。
+4. 核对 `umi_ros2/config/action4.yaml` 的设备链接，以及
+   `umi_ros2/config/realsense_left.yaml` 的 `serial` 和
+   `color_usb_interface`（D435i 彩色接口为 `03`）。RealSense 默认按序列号
+   和接口自动寻找彩色端口，避免 `by-id ...video-index0` 误指向深度流。
+   启动时可分别用
+   `video_device:=/dev/videoN` 和 `left_video_device:=/dev/videoM` 临时覆盖。
 5. 在线采集期间不要让 Action 4 同时向 microSD 录像。
 
 ## 9. 启动在线采集
@@ -253,6 +290,10 @@ task。推荐启动时就用 `task:=` 写明：
 ros2 launch umi_ros2 online_record.launch.py task:="pick up the red cube and place it in the box"
 ```
 
+Action 4 标记为 `wrist` / `wrist_image`，D435i 彩色流标记为 `left` /
+`left_image`。两路图像写入不同视频文件和 timing；录制索引中的
+`image_streams` 保存字段与路径的对应关系。不采集深度或红外。
+
 `task:=` 可以不填：
 
 ```bash
@@ -263,9 +304,10 @@ ros2 launch umi_ros2 online_record.launch.py
 `task` 为空，导出数据集前必须补上（见下文“补填或修改 task”）。task 只写在
 `session.yaml` 里，session 目录名不包含 task，仍是 `online_session_<时间>`。
 
-系统会启动 Action 4、Vive、常驻 pose recorder 和 RViz2。相机与 pose
-recorder 在本次启动中同时预热一次，默认至少 5 秒。等待 RViz2 中同时出现
-相机画面、Tracker 和路径后再开始采集。
+系统会启动 Action 4、D435i 彩色流、Vive、常驻 pose recorder 和 RViz2。
+两台相机与 pose recorder 在本次启动中各预热一次，默认至少 5 秒。等待
+RViz2 中出现两路画面、Tracker 和路径后再开始采集。在线预览为 Action 4
+320×180、D435i 320×240；预览分辨率不会降低录制视频分辨率。
 
 在第二个准备好的终端运行：
 
@@ -276,7 +318,7 @@ ros2 run umi_ros2 episode_keyboard
 按键规则：
 
 - 按 Enter：开始一条新 episode。
-- 在等待状态输入 `c` 后按 Enter：开始一条专用标定记录。
+- 在等待状态输入 `c` 后按 Enter：列出相机；输入编号后开始该路标定。
 - 再按 Enter：结束并保存当前 episode。
 - 再按 Enter：开始下一条新 episode。
 - 在等待状态输入 `n` 后按 Enter：结束当前 session，开始一个新 session（换
@@ -285,12 +327,26 @@ ros2 run umi_ros2 episode_keyboard
 - 输入 `q` 后按 Enter：只退出按键控制器，不停止整个系统。
 - 在 Launch 终端按 `Ctrl+C`：结束整个在线系统。
 
-每次结束 episode 后，等待终端显示 `episode complete`，再开始下一条。
+结束普通 episode 后，等待终端显示 `episode complete`，再开始下一条。结束
+标定记录后，系统立即运行**所选相机与 pose** 的时序标定。当前编号为
+`1: wrist / wrist_image`、`2: left / left_image`（列表来自当前注册相机）。
+通过时绿色显示 `accept` 和偏移量；失败时红色显示 `reject`，删除本次标定
+视频、timing、validation、pose 和派生结果，保留目录。按 Enter 即在原目录
+重录当前相机；`c` 可重新选择相机。每路标定结果独立保存。
 
 等待状态下，图像只用于 RViz2 预览，pose recorder 维持订阅但不保存；录制
-状态下，每条记录仍写入自己目录内独立的 `video.mp4` 和 `pose/`。开始时先
-确认新 pose bag 已写入第一条 pose，再开始写视频。切换 episode 不会重启或
-重新预热相机和 pose recorder。
+状态下，每条普通 episode 写入 wrist 的 `cameras/wrist/video.mp4`、左侧的
+`cameras/left/video.mp4` 和一个共享的 `pose/`。开始时先确认新 pose bag
+已写入第一条 pose，再等待 500 ms 后启动两路视频；这段时间只保存 pose，
+相机保持打开。标定只录所选一路，其他相机继续预览。结束时视频完成封装和验证才登记为
+`complete`。切换 episode 不会重启或重新预热相机和 pose recorder。
+
+每条普通 episode 结束后自动诊断，终端显示绿色 `accept` 或红色 `reject`。
+接受条件：两路 MP4 解码正常、帧数匹配、时间戳完整且递增、无超过 50 ms 的
+帧间隔；pose 完整覆盖两路图像的原始时间范围，且平均频率至少 88 Hz。
+零星 pose 间隔缺帧不会单独导致拒绝。结果保存在该 episode 的 `quality.json`，
+拒绝时标记 `exclude_from_dataset: true`；目前该标记供后续整理使用，导出器
+尚未自动过滤。无需增加启动参数，停止服务返回后即可开始下一条。
 
 ### 在同一次启动中切换任务
 
@@ -306,13 +362,13 @@ ros2 run umi_ros2 episode_keyboard
   需要先按 Enter 结束录制。
 - 旧 session 标记为 `complete`；新建 `online_session_<时间>/`，episode 编号
   从 `episode_0001` 重新开始。
-- 旧 session 中所有已完成的标定录制会把**原始数据**（`video.mp4`、
-  `video.timing.json`、`video.validation.json`、`pose/`）按原编号复制到新
+- 旧 session 中所有已完成的标定录制会把**原始数据**（wrist 的
+  `cameras/wrist/video.*`、左侧的 `cameras/left/video.*`、`pose/`）按原编号复制到新
   session，并在 `session.yaml` 中用 `copied_from` 注明来源（仅供追溯）。
   `time_offset.json`、`alignment_report.png` 等结果**不会复制**，新 session
-  的标定状态为 `not_calibrated`，需要在新 session 里重新运行
-  `calibrate_time`（见第 12 节）。因为复制会一直传下去，一次启动中只需要录
-  一次标定。
+  的标定状态为 `not_calibrated`，需要在新 session 里重新标定（见第 12 节）。
+  因为复制会一直传下去，一次启动中每路相机只需要录制一次通过的标定；
+  新 session 需对复制来的每路原始标定分别重新计算结果。
 - 如果旧 session 没有标定数据，终端会提示本 session 没有标定，需要录一条。
 - 在新 session 里再录标定时，编号接着往下排（例如 `calibration_002`）。
 - 复制期间命令会等待，复制完成之前不会开始新的录制。复制失败时不会留下
@@ -334,39 +390,37 @@ ros2 run umi_ros2 generate_aruco_marker \
 
 ## 11. 录制时间标定 episode
 
-每次重新启动在线采集系统后，先录制一条专用时间标定 episode。同一次
-Launch 持续运行期间，普通 episode 不需要重复标定。
+每次重新启动在线采集系统后，分别为 wrist、left 录制专用时间标定。
+同一次 Launch 持续运行期间，普通 episode 不需要重复标定。
 
 操作步骤：
 
-1. 将 ArUco 标记固定在桌面上，标记不能跟随夹爪移动。
+1. wrist：将 ArUco 标记固定在桌面上，移动相机与 Tracker 组件；
+   left：固定相机，将标记固定在 Tracker/夹爪上，标记与 Tracker 一起移动。
 2. 确认标记在 RViz2 相机画面中完整、清晰可见。
-3. 在按键控制器中输入 `c` 后按 Enter，开始标定记录。
+3. 在按键控制器中输入 `c` 后按 Enter，选择相机编号并回车，开始标定。
 4. 保持夹爪静止约 2 秒。
-5. 让夹爪水平向左、向右往返移动 3～5 次。
-6. 移动过程中保持标记完整可见，避免手遮挡标记。
-7. 再次保持静止约 2 秒。
-8. 按 Enter 结束，并等待 `calibration complete`。
-9. 记下刚生成的 `online_session_<时间>/calibration/calibration_<编号>`
-   目录名称（本 session 的第一条标定通常是 `calibration_001`；如果是用 `n`
-   切换来的 session，已有复制来的标定，新录的编号会接着往下排）。
+5. 让夹爪左右往返移动 3～5 次。
+6. 再沿前后方向往返移动几次，然后沿上下方向往返移动几次。
+7. 移动过程中保持标记完整可见，避免手遮挡标记。
+8. 再次保持静止约 2 秒。
+9. 按 Enter 结束，并等待即时标定结果。
+10. 通过时绿色显示 `accept` 和 video-to-pose 偏移量；失败时红色显示
+    `reject`、清除本次记录并要求重录。直接 Enter 在同一目录重录；`c` 选择
+    另一相机。本相机旧的 accepted 状态会失效，其他相机的结果保留。
 
-移动时应有明显转折，但不要快到画面严重模糊。当前标定器会同时利用标记的
-水平/垂直中心、面积和画面内角度，以及 TCP 的三维平移和旋转；建议动作同时
-包含左右、上下、前后和两到三个方向的旋转，并使用不同幅度、速度和停顿，避免
+每次标定仍先保存 pose，再等待 500 ms 开始该路视频。标定使用 pose header
+绝对时间和“首帧接收时间 + 视频 PTS”，保留实际的起始差；500 ms 仅是录制
+缓冲，不会被强行加到或从标定延迟中减去。
+
+移动时应有明显转折，但不要快到画面严重模糊。当前标定器只使用标记的
+水平/垂直中心与面积，以及 TCP 的 X/Y/Z 平移，不使用标记角度或 TCP 旋转。
+建议左右、前后、上下三个方向都做几次不同幅度和速度的往返，并穿插停顿，避免
 完全周期重复。短暂遮挡可以接受，但应尽量让标记持续完整可见。
 
-## 12. 计算并检查时间差
+## 12. 检查时间差结果
 
-在第三个准备好的终端运行：
-
-```bash
-ros2 run umi_ros2 calibrate_time \
-  recordings/online_session_<时间>/calibration/calibration_001
-```
-
-将目录替换为刚才的真实标定 episode；用 `n` 切换来的 session 则对复制来的
-标定目录运行同样的命令。完成后，该目录会增加：
+新录制的标定会自动运行估计器，并在按键控制终端显示结果。通过时目录保留：
 
 ```text
 time_offset.json
@@ -380,13 +434,24 @@ alignment_report.png
 2. 打开 `time_offset.json`，确认 `accepted` 为 `true`。
 3. 检查 `window_offsets_seconds` 相互接近，并确认
    `window_offset_std_seconds` 不超过验收阈值（默认 20 ms）。
-4. 如果命令失败、`accepted` 为 `false`，或者曲线明显没有对齐，应重新录制
-   标定 episode，不要继续使用该结果。
+4. 如果显示 rejected/failed、`accepted` 为 `false`，或者曲线明显没有对齐，应
+   重新录制标定 episode，不要继续使用该结果。
+
+如果需要对 `n` 切换 session 复制来的标定单独计算，可在另一个终端手动运行：
+
+```bash
+ros2 run umi_ros2 calibrate_time \
+  recordings/online_session_<时间>/calibration/calibration_001
+```
 
 标定程序会把结果路径和状态写入本次 session 的 `session.yaml`。之后的对齐和
-数据集导出（第 15、16 节）会自动读取其中 accepted 的时间差，不需要手工填写。
+数据集导出（第 15、16 节）目前仍处理 wrist，会自动读取其 accepted 时间差。
+每路结果分别保存于 `temporal_calibrations.<camera_id>`；原来的
+`temporal_calibration` 保留为 wrist 的兼容字段。单路录像自动识别相机，也可
+用 `--camera-id left` 显式选择；多视角对齐与数据集导出尚待后续阶段。
 每个 session 都要有自己 accepted 的结果：用 `n` 切换出来的新 session 带有复制
-来的标定录像，但仍需在新 session 里对它运行一次本命令。
+来的标定录像，但仍需在新 session 里对它运行一次标定（新录制 calibration
+会自动完成；复制来的每路 calibration 分别使用上面的手动命令）。
 
 ## 13. 录制普通在线 episode
 
@@ -406,18 +471,24 @@ alignment_report.png
 recordings/online_session_<时间>/
 ├── session.yaml
 ├── calibration/
-│   └── calibration_001/
-│       ├── video.mp4
-│       ├── video.timing.json
-│       ├── video.validation.json
+│   ├── calibration_001/                # wrist 独立标定
+│   │   ├── cameras/wrist/              # video.mp4 + timing + validation
+│   │   ├── time_offset.json
+│   │   ├── alignment_report.png
+│   │   └── pose/
+│   └── calibration_002/                # left 独立标定
+│       ├── cameras/left/
+│       │   ├── video.mp4
+│       │   ├── video.timing.json
+│       │   └── video.validation.json
 │       ├── time_offset.json
 │       ├── alignment_report.png
 │       └── pose/
 └── episodes/
     ├── episode_0001/
-    │   ├── video.mp4
-    │   ├── video.timing.json
-    │   ├── video.validation.json
+    │   ├── cameras/wrist/               # video.mp4 + timing + validation
+    │   ├── cameras/left/                # video.mp4 + timing + validation
+    │   ├── quality.json                 # accept/reject 与排除标记
     │   └── pose/
     └── episode_0002/
 ```
@@ -429,13 +500,18 @@ recordings/online_session_<时间>/
 
 采集结束后至少检查：
 
-1. 每条 episode 都有 `video.mp4` 和 `pose/`。
-2. `video.mp4` 可以正常播放。
-3. `video.validation.json` 中没有明显失败信息。
+1. 每条 episode 都有 `cameras/wrist/video.mp4`、
+   `cameras/left/video.mp4` 和 `pose/`。
+2. 两个 MP4 都可以正常播放。
+3. 两份 `video.validation.json` 中都没有明显失败信息。
 4. `session.yaml` 已登记各条记录，`task` 不为空（为空时用
    `set_session_task` 补填，见下文）。
 5. 运行 `calibrate_time`（第 12 节）后，标定目录包含 `time_offset.json` 和
    `alignment_report.png`。
+
+当前回放可显示两路图像，时间标定可分别处理 wrist 和 left；数据集导出
+目前仍只使用 wrist 图像。旧录制仍可读取根目录 `video.mp4`。
+`left_image` 的多视角数据集导出将在后续阶段接入。
 
 用 `n` 切换过任务时，一次启动会产生多个 session，每个都要按上面检查。
 
@@ -489,6 +565,56 @@ processed/online_session_<时间>/
 `accepted` 的标定结果。输出位于独立目录，不会修改 raw session。
 
 ## 16. 生成 episode 相对坐标、HDF5 或 LeRobot v3 数据集
+
+### 独立展开到 90 Hz（D-041，当前分模块实现阶段）
+
+两路相机已有 accepted 时差后，可单独运行：
+
+```bash
+ros2 run umi_ros2 expand_session \
+  recordings/online_session_<时间> \
+  --output processed/online_session_<时间>/expanded
+```
+
+也可输入该 session 的一条普通 episode。工具按每路首帧接收时间 + 视频实际
+PTS + 各自 offset 配对图像，每组三个 90 Hz 样本各引用同一 wrist/left 源帧，
+对真实 pose 时间进行位置线性插值和四元数 SLERP。默认图像配对容差为
+16.667 ms；无效整组保留时间槽，报告配对误差、有效比例和未使用的源帧。
+图像重复目前用源帧号表示，raw MP4 不复制或重编码。
+
+输出含 `expansion_summary.json`，每条 episode 下有 `expanded_frames.npz`、
+`expanded_frames.csv` 和 `expansion.json`。Pose 暂保留世界系 XYZ + XYZW，
+同时保存 raw 首条 TCP 参考；下面的独立模块做相对坐标变换，state/action 留给后续。
+**本阶段尚未接入 `build_dataset` 和两个 exporter**；下文现有导出命令继续使用
+旧单视角契约，不能直接读取该展开结果。URDF IK 暂不实施。
+
+### 独立转换到 episode 起点坐标系（D-041）
+
+完成上一步展开后运行：
+
+```bash
+ros2 run umi_ros2 localize_session \
+  processed/online_session_<时间>/expanded \
+  --output processed/online_session_<时间>/local
+```
+
+也可直接输入 `expanded/episodes/episode_0001`，此时 `--output` 指定该条 episode
+的输出目录。输入为展开结果，不是 raw session；无需重新读取图像或 pose MCAP。
+不指定输出时，会在输入旁生成 `<输入目录名>_local`。
+
+每条 episode 使用其原始 pose 流首条保存的 TCP pose 定义固定参考：
+`T_local_i = inverse(T_world_start) * T_world_i`。初始位置决定原点，初始朝向
+决定 XYZ 轴，后续旋转不会改变参考。t=0 参考早于图像开始，因此首条展开 pose
+可以非零。缺少起点参考时报错，不回退到首图像或首展开样本。
+
+输出 `local_pose_summary.json`；每条 episode 有 `local_frames.npz`、
+`local_frames.csv` 和 `local_pose.json`。NPZ 的 `position_xyz` 和
+`orientation_xyzw` 是相对 XYZ + XYZW，单位为米；四元数归一化且符号连续。
+保留 `world_position_xyz`、`world_orientation_xyzw`、world 起点参考、90 Hz
+时间轴、两路源帧号及有效性标记。图像 invalid 但 pose 有效时仍转换该 pose；
+pose 缺口保留 NaN，不删条目或压缩时间。CLI 返回 0 表示成功，1 表示失败，
+2 表示坐标转换完成但源展开被 rejected。`--overwrite` 只允许覆盖该模块自己的
+输出。**本步骤不生成 state/action，尚未接入新版导出和 `build_dataset`。**
 
 ### 多个 session 合并成一个数据集（推荐）
 
@@ -561,8 +687,11 @@ ros2 run umi_ros2 build_dataset \
 
 ### 数据内容
 
-每条 episode 的第一条有效视频帧 pose 被定义为原点。后续位置和姿态都表示为
-相对于该原点的变换。无效帧不会被补值，也不会写入最终数据。HDF5 中每个
+每条 episode 以 Enter 开始录制后首条保存的 TCP pose 定义参考坐标系，
+位置设定原点、初始朝向设定固定轴。参考 pose 在图像延迟 500 ms 之前，
+因此首张图像对应的相对 pose 可以非零。标定也使用这个参考系下的 XYZ；
+初始朝向只用于坐标转换，不作为旋转运动特征。Raw bag 保留世界系源数据。
+无效帧不会被补值，也不会写入最终数据。HDF5 中每个
 episode 包含逐帧 JPEG 图像、`[x,y,z,qx,qy,qz,qw]` pose、原视频帧号、视频
 PTS 和 pose 查询时间。可以用 `--jpeg-quality` 调整图像压缩质量。
 
@@ -650,9 +779,43 @@ ros2 launch umi_ros2 replay.launch.py \
 预览分辨率只影响回放显示，不会修改 MP4 或实时采集设置。回放默认按视频原有
 约 30 fps 展示；不能通过调高预览参数生成原视频没有的帧。
 
-回放会直接读取每条数据的 `video.mp4`，同时播放对应的 `pose/`，在 RViz2
-显示图像、Vive 路径和 TF。切换到下一条数据前会清空上一条路径。当前回放
-保留原始视频与 pose 的记录起点关系，但不会自动应用 `time_offset.json`。
+回放读取每条数据的 `cameras/<camera_id>/video.mp4`（旧录制可在根目录
+`video.mp4`），同时播放对应的 `pose/`，在 RViz2 显示各路图像、当前
+Vive TCP pose、路径和 TF。切换到下一条数据前会清空上一条路径。默认按原始
+记录时间回放；如需按逐相机已接受的标定时差显示，可运行：
+
+```bash
+ros2 launch umi_ros2 replay.launch.py \
+  input_path:=recordings/online_session_<时间>/episodes/episode_0001 \
+  use_calibration:=true loop:=true preview_width:=640 preview_height:=360
+```
+
+此模式要求该 session 中每路相机都有 accepted 标定；短 episode 会循环播放，
+按原视频实际帧时间（约 30 fps）显示。按 Ctrl+C 结束回放。
+
+### 逐帧视觉检查 image / pose 对齐
+
+在项目根目录运行：
+
+```bash
+ros2 run umi_ros2 frame_alignment_viewer recordings/online_session_<时间>
+```
+
+省略路径时打开 `recordings/` 下最新 session。窗口默认显示第一条 episode；
+顶部可切换 episode、各相机的 calibration 和逐帧参考相机。
+
+- **Space / → / 下一帧按钮**：前进一张参考相机的图像。
+- **← / 上一帧按钮**：后退一帧；拖动滑条可跳到任意帧。
+- 勾选“应用标定时差”默认启用；取消可对比未经校正的原始时间。
+- 两路图像、三维 TCP 轨迹/姿态坐标轴、XYZ 曲线游标在同一次绘制中更新。
+
+查看器直接读取 MP4 和 pose MCAP，不发布 ROS 图像或 pose 话题。
+每张参考图像按 `first_receive_unix_ns + 实际 PTS + 该相机标定时差`
+插值得到 pose，坐标系使用录制起点的首条 pose；500 ms 前置缓冲保留在
+原始时间戳中。另一相机选校正时间最接近的一帧，标题的 `delta` 表示两图
+时间差，三维图中两种颜色的圆点各对应自身图像的 pose。超出相机时间范围
+显示空白；pose 无覆盖或采样间隔超过 100 ms 时明确标为无效。
+要求所展示的相机已有 accepted 标定；关闭窗口结束查看，不修改 raw 文件。
 
 ## 19. 只观察，不录制
 
@@ -672,10 +835,19 @@ ros2 launch umi_ros2 vive.launch.py
 
 ### 没有相机画面
 
-1. 确认 Action 4 已选择 Webcam 模式。
-2. 运行 `v4l2-ctl --list-devices`，确认设备路径。
-3. 检查 `action4.yaml` 中的 `video_device`。
-4. 确认没有其他程序正在占用相机。
+1. 确认 Action 4 已选择 Webcam 模式，D435i 接在 USB 3 端口。
+2. 运行 `v4l2-ctl --list-devices`，确认两个彩色流对应的设备路径。
+3. 检查 `action4.yaml` 的设备链接，以及 `realsense_left.yaml` 的序列号
+   和 RGB 接口。若传入 `left_video_device`，它会覆盖自动识别，须指向
+   支持 YUYV 的彩色端口。
+4. 确认没有其他程序正在占用任一相机。
+5. 启动后如果相机进程提示 `No frames from /dev/videoN`，表示 V4L2
+   没有收到首帧。重新在 Action 4 上选择 Webcam 模式并重连 USB，再启动。
+   可用 `timeout 8s v4l2-ctl -d /dev/videoN --stream-mmap
+   --stream-count=30 --stream-to=/dev/null` 独立检查是否真的送帧。
+6. 如果 `/action4/image_preview` 已有消息但 RViz 没有画面，检查 RViz
+   进程是否退出；图形界面崩溃与相机无帧应分别排查。
+   左侧相机的话题是 `/realsense/left/image_preview`。
 
 ### 没有 Vive pose
 
@@ -691,6 +863,17 @@ ros2 launch umi_ros2 vive.launch.py
 3. 如果移动过基站，重新进行 Vive 标定并重新开始会话。
 
 ### 时间标定失败
+
+如果提示 `ffprobe` 不存在，先安装系统软件包 `ffmpeg`，然后对刚保存的标定目录
+重新运行 `ros2 run umi_ros2 calibrate_time <标定目录>`。这一类工具缺失不会
+损坏 MP4 或 MCAP，也不需要先重新录制。若录制时生成的
+`video.validation.json` 因缺少 `ffprobe` 标为 `decode_ok: false`，该字段仅反映
+当时未完成验证；补齐工具后可用 `ffprobe` 检查已保存的视频。
+
+```bash
+sudo apt-get install ffmpeg
+ffprobe -version
+```
 
 1. 确认 ArUco ID 4 在大部分画面中完整可见。
 2. 增加左右移动距离，并确保存在 3～5 个明显往返。
@@ -717,8 +900,8 @@ accepted、没有 episode、对齐有效帧不足、图像尺寸或帧率不一�
   Action 4 + Vive 真机验收。
 - `build_dataset` 已用真实标定录像完成软件级合并导出验证，但还没有真实的多任务
   episode 数据，也没有完成训练侧验收；LeRobot 中暂时没有 `action` 字段。
-- 时间差是每个 session 一个常数，不建模时钟漂移。回放显示不应用时间差，只有
-  对齐和导出会应用。
+- 每路相机在一个 session 中使用一个常数时间差，不建模时钟漂移。回放可用
+  `use_calibration:=true` 应用逐路差值；当前数据集对齐和导出仍只处理 wrist。
 - 相机内参和相机到 Tracker 的刚性外参尚未标定。
 - 录制分支不会主动丢帧，但无法证明相机源端没有丢帧
   （`source_completeness: not_verified`）。

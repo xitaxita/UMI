@@ -1,13 +1,16 @@
-"""Encode Action 4 MJPEG into H.264 MP4 with a disposable ROS preview."""
+"""Coordinate online color cameras, pose recording and ROS previews."""
 
+import contextlib
+import io
 import json
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
+from functools import partial
 from pathlib import Path
 
 import rclpy
@@ -19,8 +22,13 @@ from sensor_msgs.msg import Image
 
 from std_srvs.srv import Trigger
 
+from umi_ros2.camera.action4_source import Action4Source
+from umi_ros2.camera.episode_quality import (
+    IMAGE_GAP_LIMIT_SECONDS, diagnose_episode, format_verdict)
+from umi_ros2.camera.realsense_source import RealSenseSource
 from umi_ros2.session.layout import (
     calibration_number,
+    camera_video_path,
     create_online_session,
     normalize_task,
     now_text,
@@ -29,16 +37,25 @@ from umi_ros2.session.layout import (
     session_task,
     switch_session,
     update_session,
+    update_temporal_calibration,
 )
+
+import yaml
+
+
+IMAGE_RECORDING_DELAY_SECONDS = 0.5
 
 
 class H264CaptureNode(Node):
-    """Own one GStreamer process and publish only its latest preview."""
+    """Coordinate required camera sources, pose and online sessions."""
 
     def __init__(self):
-        """Start MJPEG capture, H.264 encoding and the preview reader."""
+        """Start camera previews and optional shared session recording."""
         super().__init__('action4_h264_capture_node')
         self.declare_parameter('video_device', '/dev/video0')
+        self.declare_parameter('device_override', '')
+        self.declare_parameter('camera_id', 'wrist')
+        self.declare_parameter('image_field', 'wrist_image')
         self.declare_parameter('image_width', 1920)
         self.declare_parameter('image_height', 1080)
         self.declare_parameter('framerate', 30)
@@ -55,6 +72,9 @@ class H264CaptureNode(Node):
         self.declare_parameter('bitrate_kbps', 12000)
         self.declare_parameter('warmup_seconds', 5.0)
         self.declare_parameter('startup_timeout_seconds', 30.0)
+        self.declare_parameter('realsense_enabled', False)
+        self.declare_parameter('realsense_config_path', '')
+        self.declare_parameter('realsense_device_override', '')
 
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._preview_width = int(
@@ -63,9 +83,6 @@ class H264CaptureNode(Node):
         self._preview_height = int(
             self.get_parameter('preview_height').value
         )
-        self._frame_size = self._preview_width * self._preview_height * 3
-        self._preview_lock = threading.Lock()
-        self._pending_preview = None
         self._closed = False
 
         self._episode_mode = bool(self.get_parameter('episode_mode').value)
@@ -92,7 +109,11 @@ class H264CaptureNode(Node):
             if self._runtime_dir is not None else None
         )
         self._base_config = {
-            'device': str(self.get_parameter('video_device').value),
+            'device': (
+                str(self.get_parameter('device_override').value).strip()
+                or str(self.get_parameter('video_device').value)),
+            'camera_id': str(self.get_parameter('camera_id').value),
+            'image_field': str(self.get_parameter('image_field').value),
             'width': int(self.get_parameter('image_width').value),
             'height': int(self.get_parameter('image_height').value),
             'fps': int(self.get_parameter('framerate').value),
@@ -108,17 +129,75 @@ class H264CaptureNode(Node):
             'status_path': str(self._status_path),
         }
         self._output_path = ''
+        self._output_paths = {}
         self._episode_dir = None
         self._recording_kind = None
+        self._recording_camera_ids = None
+        self._calibration_camera_id = self._base_config['camera_id']
+        self._calibration_retries = {}
         self._episode_number = 0
         self._calibration_number = 0
         self._pose_process = None
-        self._process = None
+        self._camera = Action4Source(self._base_config)
+        self._cameras = {self._camera.camera_id: self._camera}
+        self._frame_ids = {self._camera.camera_id: self._frame_id}
+        self._preview_topics = {
+            self._camera.camera_id:
+            str(self.get_parameter('preview_topic').value)}
+        if bool(self.get_parameter('realsense_enabled').value):
+            config_path = Path(str(
+                self.get_parameter('realsense_config_path').value))
+            if not config_path.is_file():
+                raise ValueError(
+                    f'RealSense config file does not exist: {config_path}')
+            left_config = yaml.safe_load(
+                config_path.read_text(encoding='utf-8'))
+            if not isinstance(left_config, dict):
+                raise ValueError('RealSense config must be a mapping')
+            left_config = dict(left_config)
+            left_override = str(self.get_parameter(
+                'realsense_device_override').value).strip()
+            left_config['device'] = left_override or str(left_config['device'])
+            left_config['auto_select_color'] = not bool(left_override)
+            left_config['warmup_seconds'] = (
+                self._base_config['warmup_seconds'])
+            left_config['startup_timeout_seconds'] = (
+                self._base_config['startup_timeout_seconds'])
+            left_config['status_path'] = str(
+                (self._runtime_dir or self._recordings_root)
+                / '.online_realsense_status.json')
+            left = RealSenseSource(left_config)
+            if (left.camera_id in self._cameras
+                    or left.image_field == self._camera.image_field):
+                raise ValueError('camera_id and image_field must be unique')
+            if not re.fullmatch(r'[A-Za-z0-9_]+', left.camera_id):
+                raise ValueError('RealSense camera_id must be a path-safe ID')
+            self._cameras[left.camera_id] = left
+            self._frame_ids[left.camera_id] = str(
+                left_config.get('frame_id', 'realsense_left_camera'))
+            self._preview_topics[left.camera_id] = str(
+                left_config.get(
+                    'preview_topic', '/realsense/left/image_preview'))
+        self._configured_streams = [
+            {'camera_id': camera.camera_id,
+             'image_field': camera.image_field,
+             'preview_topic': self._preview_topics[camera_id]}
+            for camera_id, camera in self._cameras.items()
+        ]
+        if self._session_dir is not None:
+            update_session(
+                self._session_dir, image_streams=self._configured_streams)
         self._publisher = self.create_publisher(
             Image,
             str(self.get_parameter('preview_topic').value),
             qos_profile_sensor_data,
         )
+        self._preview_publishers = {self._camera.camera_id: self._publisher}
+        for camera_id in self._cameras:
+            if camera_id != self._camera.camera_id:
+                self._preview_publishers[camera_id] = self.create_publisher(
+                    Image, self._preview_topics[camera_id],
+                    qos_profile_sensor_data)
         self._preview_timer = self.create_timer(
             1.0 / max(1.0, float(self.get_parameter('preview_fps').value)),
             self._publish_latest_preview,
@@ -132,6 +211,14 @@ class H264CaptureNode(Node):
                 Trigger, '~/start_episode', self._start_episode)
             self._calibration_service = self.create_service(
                 Trigger, '~/start_calibration', self._start_calibration)
+            self._list_cameras_service = self.create_service(
+                Trigger, '~/list_cameras', self._list_cameras)
+            self._camera_calibration_services = [
+                self.create_service(
+                    Trigger, f'~/start_calibration/{camera_id}',
+                    partial(self._start_calibration, camera_id=camera_id))
+                for camera_id in self._cameras
+            ]
             self._stop_service = self.create_service(
                 Trigger, '~/stop_episode', self._stop_episode)
             self._new_session_service = self.create_service(
@@ -165,7 +252,8 @@ class H264CaptureNode(Node):
         previous = self._session_dir
         try:
             session, copied = switch_session(
-                previous, self._recordings_root, task)
+                previous, self._recordings_root, task,
+                image_streams=getattr(self, '_configured_streams', None))
         except Exception as error:  # noqa: B902 - report, keep old session
             response.success = False
             response.message = (
@@ -180,6 +268,7 @@ class H264CaptureNode(Node):
         self._episode_number = 0
         self._calibration_number = max(
             (calibration_number(path) for path in copied), default=0)
+        self._calibration_retries = {}
         self.get_logger().info(
             f'Session {previous.name} complete; now recording into '
             f'{session}')
@@ -188,7 +277,7 @@ class H264CaptureNode(Node):
             names = ', '.join(path.name for path in copied)
             calibration_note = (
                 f'copied raw calibration {names}; run calibrate_time in this '
-                f'session (newest: {copied[-1].name})')
+                'session separately for each camera')
             self.get_logger().info(f'Session switch: {calibration_note}')
         else:
             calibration_note = (
@@ -201,30 +290,19 @@ class H264CaptureNode(Node):
         return response
 
     def _start_worker(self, output_path):
-        """Start the one persistent preview and episode-recording worker."""
-        self._status_path.unlink(missing_ok=True)
-        config = dict(self._base_config)
-        config['output_path'] = output_path
-        command = [sys.executable, '-m', 'umi_ros2.camera.capture_worker',
-                   json.dumps(config)]
-        self._process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE,
-            start_new_session=True,
-        )
-        process = self._process
-        self._reader = threading.Thread(
-            target=self._read_previews,
-            args=(process,),
-            name='action4_preview_reader',
-            daemon=True,
-        )
-        self._reader.start()
-        self.get_logger().info(
-            'Action 4 camera process launched; performing one-time warmup '
-            'before entering waiting state'
-        )
+        """Start each persistent camera worker once per launch."""
+        started = []
+        try:
+            for camera in self._cameras.values():
+                camera.start()
+                started.append(camera)
+                self.get_logger().info(
+                    f'{camera.camera_id} camera process launched; '
+                    'performing one-time warmup')
+        except Exception:
+            for camera in reversed(started):
+                camera.close()
+            raise
 
     def _start_pose_worker(self):
         """Start one pose subscriber retained for the complete session."""
@@ -246,20 +324,9 @@ class H264CaptureNode(Node):
             'the camera')
 
     def _stop_worker(self):
-        """Stop the persistent worker when the complete ROS session exits."""
-        if self._process is None:
-            return
-        process = self._process
-        self._process = None
-        if process.poll() is None:
-            process.send_signal(signal.SIGINT)
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.terminate()
-                process.wait(timeout=5)
-        self._reader.join(timeout=2)
-        process.stdout.close()
+        """Stop both persistent workers when the ROS session exits."""
+        for camera in reversed(list(self._cameras.values())):
+            camera.close()
 
     def _stop_pose_worker(self):
         """Stop the persistent pose subscriber when the session exits."""
@@ -278,6 +345,10 @@ class H264CaptureNode(Node):
     def _new_recording_dir(self, kind):
         """Return the next sequential ordinary or calibration directory."""
         if kind == 'calibration':
+            retry = getattr(self, '_calibration_retries', {}).get(
+                self._calibration_camera_id)
+            if retry is not None:
+                return retry
             self._calibration_number += 1
             name = f'calibration_{self._calibration_number:03d}'
             return self._session_dir / 'calibration' / name
@@ -289,53 +360,109 @@ class H264CaptureNode(Node):
         """Create one new video and pose recording."""
         return self._start_recording('episode', response)
 
-    def _start_calibration(self, request, response):
-        """Create one dedicated temporal-calibration recording."""
-        return self._start_recording('calibration', response)
+    def _list_cameras(self, request, response):
+        """Return numbered camera identities and their start services."""
+        response.success = True
+        response.message = json.dumps([
+            {'number': number, 'camera_id': camera_id,
+             'image_field': camera.image_field,
+             'start_service': (
+                 f'{self.get_fully_qualified_name()}/start_calibration/'
+                 f'{camera_id}')}
+            for number, (camera_id, camera) in enumerate(
+                self._cameras.items(), 1)
+        ])
+        return response
 
-    def _start_recording(self, kind, response):
-        """Start one recording without restarting the warmed camera."""
+    def _start_calibration(self, request, response, camera_id=None):
+        """Record only the selected camera and the shared pose."""
+        return self._start_recording(
+            'calibration', response, camera_id or self._camera.camera_id)
+
+    def _start_recording(self, kind, response, camera_id=None):
+        """Save a 500 ms pose lead before starting the requested cameras."""
         if self._episode_dir is not None:
             response.success = False
             response.message = (
                 f'already recording {self._episode_dir}')
             return response
-        if not self._wait_worker_state('waiting', 30):
+        camera_id = camera_id or self._camera.camera_id
+        camera_ids = [camera_id] if kind == 'calibration' else list(
+            self._cameras)
+        if any(identity not in self._cameras for identity in camera_ids):
             response.success = False
-            response.message = 'camera has not completed its one-time warmup'
+            response.message = f'unknown camera: {camera_id}'
+            return response
+        if not self._wait_worker_state('waiting', 30, camera_ids):
+            response.success = False
+            response.message = (
+                'selected cameras must complete warmup before recording; '
+                f'current states: {self._worker_state()}')
             return response
         if not self._wait_pose_state('waiting', 30):
             response.success = False
             response.message = (
                 'pose recorder has not completed its one-time warmup')
             return response
+        self._calibration_camera_id = camera_id
+        retries = getattr(self, '_calibration_retries', {})
         episode = self._new_recording_dir(kind)
         pose = episode / 'pose'
-        episode.mkdir(parents=True, exist_ok=False)
+        if kind == 'calibration' and camera_id in retries:
+            self._discard_calibration(episode, camera_id)
+        episode.mkdir(
+            parents=True,
+            exist_ok=kind == 'calibration' and camera_id in retries)
         self._episode_dir = episode
         self._recording_kind = kind
-        self._output_path = self._prepare_output(episode / 'video.mp4')
+        self._recording_camera_ids = camera_ids
+        started = []
         try:
+            self._output_paths = {
+                camera_id: self._prepare_output(
+                    self._video_path(episode, camera_id))
+                for camera_id in camera_ids
+            }
+            self._output_path = next(iter(self._output_paths.values()))
             self._send_pose_worker({
                 'command': 'start', 'output_path': str(pose)})
             if not self._wait_pose_state('recording_ready', 5):
                 raise RuntimeError(
                     'pose recorder did not write its first pose in time')
-            self._send_worker({
-                'command': 'start', 'output_path': self._output_path,
-                'timing_path': str(
-                    Path(self._output_path).with_suffix('.timing.json')),
-            })
-            if not self._wait_worker_state('recording', 5):
-                raise RuntimeError('camera did not enter recording state')
-        except Exception:
-            self._stop_pose_recording()
+            self.get_logger().info(
+                'First pose saved; recording pose for 500 ms before '
+                'starting selected image streams')
+            time.sleep(IMAGE_RECORDING_DELAY_SECONDS)
+            for identity in camera_ids:
+                camera = self._cameras[identity]
+                output = Path(self._output_paths[identity])
+                camera.start_recording(
+                    output, output.with_suffix('.timing.json'))
+                started.append(camera)
+            if not self._wait_worker_state('recording', 5, camera_ids):
+                raise RuntimeError(
+                    'not all cameras entered recording state: '
+                    f'{self._worker_state()}')
+        except Exception as error:
+            for camera in started:
+                try:
+                    camera.stop_recording()
+                except (OSError, RuntimeError):
+                    pass
+            try:
+                self._stop_pose_recording()
+            except (OSError, RuntimeError):
+                pass
             register_recording(
-                self._session_dir, episode, kind, status='failed')
-            self._episode_dir = None
-            self._recording_kind = None
-            self._output_path = ''
-            raise
+                self._session_dir, episode, kind, status='failed',
+                image_streams=self._recording_streams(episode))
+            if kind == 'calibration':
+                self._reject_calibration(episode, camera_id, str(error))
+            self._clear_recording()
+            response.success = False
+            response.message = f'{kind} start failed: {error}'
+            self.get_logger().error(response.message)
+            return response
         response.success = True
         response.message = f'{kind} started: {episode}'
         self.get_logger().info(response.message)
@@ -356,36 +483,194 @@ class H264CaptureNode(Node):
             raise RuntimeError('pose recording did not finalize in time')
 
     def _stop_episode(self, request, response):
-        """Finalize the current episode and resume idle preview."""
+        """Finalize raw files and immediately calibrate a selected camera."""
         if self._episode_dir is None:
             response.success = False
             response.message = 'no episode is recording'
             return response
         episode = self._episode_dir
         kind = self._recording_kind
-        self._send_worker({'command': 'stop'})
-        timing_path = Path(self._output_path).with_suffix('.timing.json')
-        if not self._wait_timing_complete(timing_path, 20):
-            response.success = False
+        camera_id = getattr(
+            self, '_calibration_camera_id', self._camera.camera_id)
+        errors = self._finalize_recording()
+        response.success = not errors
+        response.message = (
+            f'{kind} complete: {episode}' if not errors
+            else f'{kind} failed: {episode}; ' + '; '.join(errors))
+        if kind == 'calibration':
+            accepted, detail = (
+                self._calibrate_recording(episode, camera_id) if not errors
+                else (False, '; '.join(errors)))
+            if accepted:
+                self._calibration_retries.pop(camera_id, None)
+            else:
+                try:
+                    self._reject_calibration(episode, camera_id, detail)
+                    detail += '; 已清除本次记录，按 Enter 在原目录重录'
+                except OSError as error:
+                    detail += f'; 清理失败，重试前需清理: {error}'
+            response.success = accepted
+            color = '\033[32m' if accepted else '\033[31m'
+            verdict = 'accept' if accepted else 'reject'
             response.message = (
-                'video finalization timed out; system still running'
-            )
-            return response
-        self._write_validation(self._process.poll())
-        self._stop_pose_recording()
-        register_recording(self._session_dir, episode, kind)
-        self._episode_dir = None
-        self._recording_kind = None
-        self._output_path = ''
-        response.success = True
-        response.message = f'{kind} complete: {episode}'
-        self.get_logger().info(response.message)
+                f'{color}{camera_id}: {verdict} — {detail}\033[0m\n'
+                f'标定目录: {episode}')
+        if errors:
+            self.get_logger().error(response.message)
+        else:
+            self.get_logger().info(response.message)
+        if kind == 'episode':
+            response.message += '\n' + self._episode_quality_message
         return response
 
-    def _send_worker(self, command):
-        """Send one JSON command to the persistent camera worker."""
-        self._process.stdin.write((json.dumps(command) + '\n').encode())
-        self._process.stdin.flush()
+    def _video_path(self, episode, camera_id):
+        """Place every stream under its camera identity."""
+        return camera_video_path(episode, camera_id)
+
+    def _recording_streams(self, episode, camera_ids=None):
+        """List every camera's raw paths relative to this recording."""
+        streams = []
+        identities = camera_ids or getattr(
+            self, '_recording_camera_ids', None) or self._cameras
+        for camera_id in identities:
+            camera = self._cameras[camera_id]
+            video = self._video_path(episode, camera_id)
+            streams.append({
+                'camera_id': camera_id,
+                'image_field': camera.image_field,
+                'video_path': str(video.relative_to(episode)),
+                'timing_path': str(video.with_suffix(
+                    '.timing.json').relative_to(episode)),
+                'validation_path': str(video.with_suffix(
+                    '.validation.json').relative_to(episode)),
+            })
+        return streams
+
+    def _clear_recording(self):
+        self._episode_dir = None
+        self._recording_kind = None
+        self._recording_camera_ids = None
+        self._output_path = ''
+        self._output_paths = {}
+
+    def _finalize_recording(self):
+        """Stop both cameras, validate raw files and close the shared pose."""
+        episode = self._episode_dir
+        kind = self._recording_kind
+        errors = []
+        stopped = set()
+        camera_ids = getattr(
+            self, '_recording_camera_ids', None) or self._cameras
+        for camera_id in camera_ids:
+            camera = self._cameras[camera_id]
+            try:
+                camera.stop_recording()
+                stopped.add(camera_id)
+            except (OSError, RuntimeError) as error:
+                errors.append(f'{camera_id} stop failed: {error}')
+        for camera_id in camera_ids:
+            camera = self._cameras[camera_id]
+            output = self._output_paths.get(camera_id)
+            if output is None or camera_id not in stopped:
+                continue
+            timing_path = Path(output).with_suffix('.timing.json')
+            if not self._wait_timing_complete(timing_path, 20):
+                errors.append(f'{camera_id} video finalization timed out')
+                continue
+            try:
+                timing = json.loads(timing_path.read_text(encoding='utf-8'))
+                if timing.get('status') != 'complete':
+                    errors.append(f'{camera_id} timing status is failed')
+                report = self._write_validation(output, camera.poll())
+                if (not report.get('decode_ok')
+                        or not report.get('frame_count_matches')):
+                    errors.append(f'{camera_id} video validation failed')
+            except (OSError, ValueError, KeyError) as error:
+                errors.append(f'{camera_id} validation failed: {error}')
+        try:
+            self._stop_pose_recording()
+        except (OSError, RuntimeError) as error:
+            errors.append(f'pose finalization failed: {error}')
+        register_recording(
+            self._session_dir, episode, kind,
+            status='failed' if errors else 'complete',
+            image_streams=self._recording_streams(episode))
+        if kind == 'episode':
+            result = diagnose_episode(
+                episode, self._recording_streams(episode), errors)
+            try:
+                (episode / 'quality.json').write_text(
+                    json.dumps(result, indent=2, ensure_ascii=False) + '\n',
+                    encoding='utf-8')
+            except OSError as error:
+                result['accepted'] = False
+                result['verdict'] = 'reject'
+                result['reasons'].append(f'诊断结果保存失败: {error}')
+            self._episode_quality_message = format_verdict(
+                result, episode.name)
+            self.get_logger().info(self._episode_quality_message)
+        self._clear_recording()
+        return errors
+
+    def _discard_calibration(self, episode, camera_id):
+        """Delete rejected inputs/results, retaining the recording folder."""
+        for directory in (episode / 'cameras' / camera_id, episode / 'pose'):
+            if directory.exists():
+                shutil.rmtree(directory)
+        for name in ('time_offset.json', 'alignment_report.png'):
+            (episode / name).unlink(missing_ok=True)
+
+    def _reject_calibration(self, episode, camera_id, reason):
+        """Invalidate one camera and reserve the same path for its retry."""
+        if not hasattr(self, '_calibration_retries'):
+            self._calibration_retries = {}
+        self._calibration_retries[camera_id] = episode
+        update_temporal_calibration(self._session_dir, camera_id, {
+            'status': 'rejected', 'result': None, 'camera_id': camera_id,
+            'image_field': self._cameras[camera_id].image_field,
+            'calibrated_at': now_text(), 'error': reason,
+        })
+        register_recording(
+            self._session_dir, episode, 'calibration', status='rejected',
+            image_streams=self._recording_streams(episode, [camera_id]))
+        self._discard_calibration(episode, camera_id)
+
+    def _calibrate_recording(self, episode, camera_id='wrist'):
+        """Estimate and report the offset as soon as raw files are closed."""
+        try:
+            from umi_ros2.synchronization.calibrate_time import (
+                argument_parser, calibrate)
+
+            args = argument_parser().parse_args([
+                str(episode), '--camera-id', camera_id])
+            # The CLI function normally prints its complete JSON report.
+            # Capture it here and return the useful summary in the service.
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = calibrate(args)
+            result_path = episode / 'time_offset.json'
+            result = json.loads(result_path.read_text(encoding='utf-8'))
+            offset_ms = result['video_to_pose_offset_milliseconds']
+            report_path = episode / 'alignment_report.png'
+            if status == 0 and result.get('accepted'):
+                return True, (
+                    f'video-to-pose offset: {offset_ms:.2f} ms; '
+                    f'report: {report_path}')
+            return False, '平移轨迹拟合或分段一致性未通过原有标定阈值'
+        except Exception as error:
+            reason = f'{type(error).__name__}: {error}'
+            try:
+                update_temporal_calibration(self._session_dir, camera_id, {
+                    'status': 'rejected',
+                    'result': None,
+                    'camera_id': camera_id,
+                    'calibrated_at': now_text(),
+                    'error': reason,
+                })
+            except Exception as metadata_error:
+                reason += (
+                    '; could not update session metadata: '
+                    f'{metadata_error}')
+            return False, f'标定执行失败: {reason}'
 
     @staticmethod
     def _state_from(path):
@@ -396,17 +681,18 @@ class H264CaptureNode(Node):
             return None
 
     def _worker_state(self):
-        return self._state_from(self._status_path)
+        return {camera_id: camera.state()
+                for camera_id, camera in self._cameras.items()}
 
-    def _wait_worker_state(self, expected, timeout):
+    def _wait_worker_state(self, expected, timeout, camera_ids=None):
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._worker_state() == expected:
-                return True
-            if self._process.poll() is not None:
+        for identity in camera_ids or self._cameras:
+            camera = self._cameras[identity]
+            remaining = deadline - time.monotonic()
+            if (remaining <= 0
+                    or not camera.wait_for_state(expected, remaining)):
                 return False
-            time.sleep(0.05)
-        return False
+        return True
 
     def _wait_pose_state(self, expected, timeout):
         deadline = time.monotonic() + timeout
@@ -441,51 +727,32 @@ class H264CaptureNode(Node):
         output.touch(exist_ok=False)
         return str(output)
 
-    def _read_exactly(self, process, size):
-        chunks = bytearray()
-        while len(chunks) < size:
-            chunk = process.stdout.read(size - len(chunks))
-            if not chunk:
-                return None
-            chunks.extend(chunk)
-        return bytes(chunks)
-
-    def _read_previews(self, process):
-        while True:
-            frame = self._read_exactly(process, self._frame_size)
-            if frame is None:
-                return
-            receive_time_ns = time.time_ns()
-            with self._preview_lock:
-                self._pending_preview = (frame, receive_time_ns)
-
     def _publish_latest_preview(self):
-        with self._preview_lock:
-            preview = self._pending_preview
-            self._pending_preview = None
-        if preview is None:
-            return
-        data, stamp_ns = preview
-        message = Image()
-        message.header.frame_id = self._frame_id
-        message.header.stamp.sec = stamp_ns // 1_000_000_000
-        message.header.stamp.nanosec = stamp_ns % 1_000_000_000
-        message.height = self._preview_height
-        message.width = self._preview_width
-        message.encoding = 'bgr8'
-        message.is_bigendian = False
-        message.step = self._preview_width * 3
-        message.data = data
-        self._publisher.publish(message)
+        for camera_id, camera in self._cameras.items():
+            frame = camera.latest_preview()
+            if frame is None:
+                continue
+            message = Image()
+            message.header.frame_id = self._frame_ids[camera_id]
+            message.header.stamp.sec = (
+                frame.receive_unix_ns // 1_000_000_000)
+            message.header.stamp.nanosec = (
+                frame.receive_unix_ns % 1_000_000_000)
+            message.height = frame.height
+            message.width = frame.width
+            message.encoding = frame.encoding
+            message.is_bigendian = False
+            message.step = frame.width * 3
+            message.data = frame.data
+            self._preview_publishers[camera_id].publish(message)
 
     def _check_process(self):
-        if self._process is None:
-            return
-        return_code = self._process.poll()
-        if not self._closed and return_code is not None:
-            raise RuntimeError(
-                f'Action 4 GStreamer process exited with code {return_code}'
-            )
+        for camera_id, camera in self._cameras.items():
+            return_code = camera.poll()
+            if not self._closed and return_code is not None:
+                raise RuntimeError(
+                    f'{camera_id} GStreamer process exited with code '
+                    f'{return_code}')
         if (not self._closed and self._pose_process is not None
                 and self._pose_process.poll() is not None):
             raise RuntimeError(
@@ -493,34 +760,35 @@ class H264CaptureNode(Node):
                 f'{self._pose_process.returncode}')
 
     def close(self):
-        """Stop GStreamer cleanly so MP4 metadata is finalized."""
+        """Finalize active raw recordings, then stop all workers."""
         if self._closed:
             return
         self._closed = True
-        if self._episode_dir is not None:
-            episode = self._episode_dir
-            kind = self._recording_kind
-            self._send_worker({'command': 'stop'})
-            timing_path = Path(self._output_path).with_suffix('.timing.json')
-            self._wait_timing_complete(timing_path, 20)
-            self._write_validation(self._process.poll())
-            self._stop_pose_recording()
-            register_recording(self._session_dir, episode, kind)
-            self._episode_dir = None
-        self._stop_worker()
-        self._stop_pose_worker()
-        if self._session_dir is not None:
-            update_session(
-                self._session_dir, status='complete', ended_at=now_text())
-        if self._runtime_dir is not None:
-            shutil.rmtree(self._runtime_dir, ignore_errors=True)
+        try:
+            if self._episode_dir is not None:
+                errors = self._finalize_recording()
+                if errors:
+                    self.get_logger().error(
+                        'Recording finalized with errors: '
+                        + '; '.join(errors))
+        finally:
+            try:
+                self._stop_worker()
+            finally:
+                self._stop_pose_worker()
+                if self._session_dir is not None:
+                    update_session(
+                        self._session_dir, status='complete',
+                        ended_at=now_text())
+                if self._runtime_dir is not None:
+                    shutil.rmtree(self._runtime_dir, ignore_errors=True)
 
-    def _write_validation(self, return_code):
+    def _write_validation(self, output_path, return_code):
         """Validate the finalized video and combine worker timing facts."""
-        report = validate_video(self._output_path)
+        report = validate_video(output_path)
         report['capture_exit_code'] = return_code
         report['clean_shutdown'] = return_code in (None, 0)
-        timing_path = Path(self._output_path).with_suffix('.timing.json')
+        timing_path = Path(output_path).with_suffix('.timing.json')
         if timing_path.exists():
             timing = json.loads(timing_path.read_text(encoding='utf-8'))
             report['recording_started'] = 'first_source_pts_ns' in timing
@@ -529,10 +797,10 @@ class H264CaptureNode(Node):
                 report.get('decoded_frames') == timing['accepted_frames']
                 and timing['accepted_frames'] > 0
             )
-        Path(self._output_path).with_suffix('.validation.json').write_text(
+        Path(output_path).with_suffix('.validation.json').write_text(
             json.dumps(report, indent=2) + '\n', encoding='utf-8'
         )
-        self.get_logger().info(f'Video validation: {report}')
+        return report
 
 
 def validate_video(path):
@@ -552,9 +820,13 @@ def validate_video(path):
             'decode_ok': result.returncode == 0 and not result.stderr.strip()
             and bool(frames),
             'decoded_frames': len(frames),
+            'timestamped_frames': len(stamps),
             'max_timestamp_gap_seconds': max(gaps, default=None),
             'min_timestamp_gap_seconds': min(gaps, default=None),
             'first_frame_pts_seconds': stamps[0] if stamps else None,
+            'last_frame_pts_seconds': stamps[-1] if stamps else None,
+            'image_gap_count': sum(
+                gap > IMAGE_GAP_LIMIT_SECONDS for gap in gaps),
             'first_20_frame_pts_seconds': stamps[:20],
             'non_increasing_timestamps': sum(gap <= 0 for gap in gaps),
             'errors': result.stderr[-4000:],
@@ -565,7 +837,7 @@ def validate_video(path):
 
 
 def main(args=None):
-    """Run MJPEG-to-H.264 recording and ROS preview publication."""
+    """Run color camera recording and ROS preview publication."""
     rclpy.init(args=args)
     node = H264CaptureNode()
     try:

@@ -1,6 +1,8 @@
 action4_h264_capture_node:
   ros__parameters:
-    video_device: /dev/video0
+    camera_id: wrist
+    image_field: wrist_image
+    video_device: /dev/v4l/by-id/usb-DJI_OsmoAction4_123456789ABCDEF-video-index0
     image_width: 1920
     image_height: 1080
     framerate: 30

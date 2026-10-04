@@ -24,36 +24,6 @@ class AlignmentResult:
     errors: np.ndarray
 
 
-def quaternion_rotation_vectors(quaternions):
-    """Convert continuous quaternions to rotation vectors from sample 0."""
-    values = np.asarray(quaternions, dtype=np.float64).copy()
-    if values.ndim != 2 or values.shape[1] != 4:
-        raise ValueError('quaternions must have shape (N, 4)')
-    norms = np.linalg.norm(values, axis=1)
-    if np.any(norms < 1e-12) or not np.isfinite(values).all():
-        raise ValueError('quaternions must be finite and non-zero')
-    values /= norms[:, None]
-    for index in range(1, len(values)):
-        if np.dot(values[index - 1], values[index]) < 0:
-            values[index] *= -1
-    vectors = [np.zeros(3)]
-    cumulative = np.zeros(3)
-    for previous, value in zip(values[:-1], values[1:]):
-        inverse = np.array((-previous[0], -previous[1], -previous[2],
-                            previous[3]))
-        xyz = (inverse[3] * value[:3] + value[3] * inverse[:3]
-               + np.cross(inverse[:3], value[:3]))
-        scalar = inverse[3] * value[3] - np.dot(inverse[:3], value[:3])
-        if scalar < 0:
-            xyz, scalar = -xyz, -scalar
-        length = np.linalg.norm(xyz)
-        increment = (np.zeros(3) if length < 1e-12 else xyz / length
-                     * (2.0 * np.arctan2(length, scalar)))
-        cumulative = cumulative + increment
-        vectors.append(cumulative.copy())
-    return np.asarray(vectors)
-
-
 def _standardize_columns(values, minimum_std=1e-8):
     """Standardize informative columns and discard constant channels."""
     values = np.asarray(values, dtype=np.float64)

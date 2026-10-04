@@ -1,0 +1,100 @@
+<div id="umi-pose-image-timeline">
+  <style>
+    #umi-pose-image-timeline { color: var(--foreground); width: 100%; }
+    #umi-pose-image-timeline .timeline-subtitle { margin: 0 0 12px; }
+    #umi-pose-image-timeline .reference-lane { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+    #umi-pose-image-timeline .reference-line { flex: 1; min-width: 30px; height: 1px; background: var(--border); }
+    #umi-pose-image-timeline .chart-host { width: 100%; }
+    #umi-pose-image-timeline .timeline-chart { width: 100%; display: block; }
+    #umi-pose-image-timeline .timeline-chart text { fill: var(--foreground); font-size: 12px; font-weight: 400; }
+    #umi-pose-image-timeline .timeline-chart .secondary { fill: var(--muted-foreground); }
+    #umi-pose-image-timeline .timeline-chart .axis { stroke: var(--border); stroke-width: 1; }
+    #umi-pose-image-timeline .timeline-chart .wrist-fill { fill: color-mix(in srgb, var(--viz-series-1) 15%, transparent); }
+    #umi-pose-image-timeline .timeline-chart .left-fill { fill: color-mix(in srgb, var(--viz-series-2) 15%, transparent); }
+    #umi-pose-image-timeline .timeline-chart .state-mark { fill: var(--viz-series-3); }
+    #umi-pose-image-timeline .timeline-chart .action-mark { fill: var(--viz-series-4); }
+    #umi-pose-image-timeline .timeline-chart .source-line { stroke: var(--border); stroke-width: 1; }
+    #umi-pose-image-timeline .detail { margin-top: 10px; }
+  </style>
+  <h3>两路图像与 state / action 的时间轴</h3>
+  <div class="timeline-subtitle text-small text-muted">理想等间隔示意 · 两路 offset 已分别应用 · 每张图像共出现 3 次</div>
+  <div class="reference-lane text-small">
+    <span>t = 0：首条 raw TCP pose P₀</span>
+    <span class="reference-line" aria-hidden="true"></span>
+    <span>pose 前置段 …</span>
+    <span class="reference-line" aria-hidden="true"></span>
+    <span>τ：两路图像均可用的片段起点</span>
+  </div>
+  <div class="chart-host">
+    <svg class="timeline-chart" role="img" aria-labelledby="umi-timeline-title umi-timeline-desc"></svg>
+  </div>
+  <div class="detail text-small">Sᵢ：Pᵢ 在 P₀ 固定参考系中的 6D pose · state 每步用 Sᵢ · action 每步用 Sᵢ₊₁</div>
+  <script>
+    (() => {
+      const root = document.getElementById('umi-pose-image-timeline');
+      const host = root.querySelector('.chart-host');
+      const svg = root.querySelector('.timeline-chart');
+      const ns = 'http://www.w3.org/2000/svg';
+      const localTimes = [0, 1, 2, 3, 4, 5].map(i => i * 1000 / 90);
+      const poseNames = ['Sₖ', 'Sₖ₊₁', 'Sₖ₊₂', 'Sₖ₊₃', 'Sₖ₊₄', 'Sₖ₊₅', 'Sₖ₊₆'];
+      function element(tag, attributes, content) {
+        const node = document.createElementNS(ns, tag);
+        Object.entries(attributes || {}).forEach(([key, value]) => node.setAttribute(key, value));
+        if (content !== undefined) node.textContent = content;
+        svg.appendChild(node);
+        return node;
+      }
+      function label(x, y, value, cls, anchor = 'middle') {
+        return element('text', { x, y, 'text-anchor': anchor, class: cls || '' }, value);
+      }
+      function draw() {
+        const width = Math.max(280, Math.floor(host.getBoundingClientRect().width));
+        const columns = width < 620 ? 3 : 6;
+        const chunks = 6 / columns;
+        const rowHeight = 292;
+        const height = chunks * rowHeight + 22;
+        const left = 84;
+        const right = width - 10;
+        const columnWidth = (right - left) / columns;
+        svg.replaceChildren();
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svg.setAttribute('height', height);
+        element('title', { id: 'umi-timeline-title' }, '30 fps 双路图像各重复三次，与 90 Hz 当前和下一时刻 pose 配对');
+        element('desc', { id: 'umi-timeline-desc' }, '从 τ 开始的六个样本，间隔 11.111 毫秒。wrist 为 W0 W0 W0 W1 W1 W1，left 为 L0 L0 L0 L1 L1 L1；state 为 S_k 至 S_k+5，action 为 S_k+1 至 S_k+6。所有 S 均相对原始 pose 流首条 P0，τ 晚于原始流起点。');
+        for (let panel = 0; panel < chunks; panel++) {
+          const top = panel * rowHeight;
+          const start = panel * columns;
+          element('rect', { x: left, y: top + 18, width: right - left, height: 250, fill: 'none', stroke: 'var(--border)', 'stroke-width': 1, 'data-chart-frame': '' });
+          const laneLabels = [[54, 'Δt (ms)'], [86, '源图像'], [126, 'wrist ×3'], [170, 'left ×3'], [214, 'state'], [254, 'action']];
+          laneLabels.forEach(([y, value]) => label(left - 10, top + y, value, '', 'end'));
+          for (let local = 0; local < columns; local++) {
+            const i = start + local;
+            const x0 = left + local * columnWidth;
+            const center = x0 + columnWidth / 2;
+            if (local > 0) element('line', { x1: x0, y1: top + 18, x2: x0, y2: top + 268, class: 'axis' });
+            label(center, top + 38, `#${i}`, 'secondary');
+            label(center, top + 55, localTimes[i].toFixed(2));
+            element('rect', { x: x0 + 4, y: top + 104, width: columnWidth - 8, height: 32, class: 'wrist-fill' });
+            element('rect', { x: x0 + 4, y: top + 148, width: columnWidth - 8, height: 32, class: 'left-fill' });
+            label(center, top + 125, `W${Math.floor(i / 3)}`);
+            label(center, top + 169, `L${Math.floor(i / 3)}`);
+            element('circle', { cx: center, cy: top + 194, r: 4, class: 'state-mark' });
+            label(center, top + 215, poseNames[i]);
+            element('rect', { x: center - 4, y: top + 231, width: 8, height: 8, class: 'action-mark' });
+            label(center, top + 254, poseNames[i + 1]);
+            if (i % 3 === 0) {
+              const end = x0 + 3 * columnWidth;
+              label(x0 + 1.5 * columnWidth, top + 86, `W${Math.floor(i / 3)} + L${Math.floor(i / 3)}  ·  30 fps`);
+              element('line', { x1: center, y1: top + 95, x2: end - columnWidth / 2, y2: top + 95, class: 'source-line' });
+            }
+          }
+          label((left + right) / 2, top + 287, panel === 0 ? 'τ + Δt · 每步约 11.11 ms →' : '时间轴接续 →', 'secondary');
+        }
+        const annotationY = chunks * rowHeight + 16;
+        label(width / 2, annotationY, '图中末个 action：Sₖ₊₆ · τ + 66.67 ms', 'secondary');
+      }
+      new ResizeObserver(draw).observe(host);
+      draw();
+    })();
+  </script>
+</div>

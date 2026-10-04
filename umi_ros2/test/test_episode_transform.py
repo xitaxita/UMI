@@ -70,3 +70,20 @@ def test_requires_at_least_one_valid_frame():
             [[np.nan] * 3], [[np.nan] * 4],
             valid=np.array([False]),
         ))
+
+
+def test_recording_start_reference_precedes_images_and_keeps_fixed_axes():
+    """A rotated start frame retains pre-image motion and later orientation."""
+    half = np.sqrt(0.5)
+    start_orientation = np.array([0.0, 0.0, half, half])
+    delta = np.array([half, 0.0, 0.0, half])
+    data = transform_to_episode_frame(*_inputs(
+        [[1.0, 2.5, 3.0], [1.0, 3.0, 3.0]],
+        [start_orientation, quaternion_multiply(start_orientation, delta)],
+    ), reference_position=[1.0, 2.0, 3.0],
+        reference_orientation=start_orientation)
+    assert data.reference_frame_index == -1
+    np.testing.assert_allclose(
+        data.position_xyz, [[0.5, 0.0, 0.0], [1.0, 0.0, 0.0]], atol=1e-12)
+    assert data.orientation_xyzw[0] == pytest.approx([0.0, 0.0, 0.0, 1.0])
+    assert data.orientation_xyzw[1] == pytest.approx(delta)

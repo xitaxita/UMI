@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "accepted",
+  "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0003",
+  "source_video": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0003/video.mp4",
+  "source_pose": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0003/pose",
+  "offset_convention": "pose_time_seconds = video_frame_time_seconds + video_to_pose_offset_seconds",
+  "video_to_pose_offset_seconds": -0.09236435301542656,
+  "offset_source": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/calibration/calibration_002/time_offset.json",
+  "frame_count": 534,
+  "valid_frame_count": 534,
+  "invalid_frame_count": 0,
+  "valid_frame_ratio": 1.0,
+  "minimum_valid_frame_ratio": 0.95,
+  "maximum_pose_gap_seconds": 0.1,
+  "largest_used_pose_gap_seconds": 0.03747963905334473,
+  "raw_data_modified": false
+}

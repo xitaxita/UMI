@@ -1,4 +1,4 @@
-"""Estimate Action 4 to Vive latency from one ArUco calibration episode."""
+"""Estimate one camera's Vive latency from ArUco and TCP translation."""
 
 import argparse
 import json
@@ -9,13 +9,16 @@ import cv2
 
 import numpy as np
 
+from umi_ros2.postprocess.episode_transform import poses_in_reference_frame
 from umi_ros2.postprocess.pose_io import read_vive_poses
-from umi_ros2.session.layout import now_text, read_session, update_session
-
-from .temporal_alignment import (
-    align_feature_trajectories,
-    quaternion_rotation_vectors,
+from umi_ros2.session.layout import (
+    now_text,
+    resolve_calibration_camera,
+    resolve_video_path,
+    update_temporal_calibration,
 )
+
+from .temporal_alignment import align_feature_trajectories
 
 
 OFFSET_CONVENTION = (
@@ -40,7 +43,7 @@ def video_frame_times(path):
 
 
 def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
-    """Return times and centre/scale/orientation features for one marker."""
+    """Return times and centre/scale features for one marker."""
     aruco = cv2.aruco
     if not hasattr(aruco, dictionary_name):
         raise ValueError(f'unknown ArUco dictionary {dictionary_name}')
@@ -67,14 +70,12 @@ def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
                     points = corners[int(matches[0])].reshape(-1, 2)
                     center = np.mean(points, axis=0)
                     area = abs(float(cv2.contourArea(points)))
-                    edge = points[1] - points[0]
-                    if area > 1.0 and np.linalg.norm(edge) > 1.0:
+                    if area > 1.0:
                         detected_times.append(frame_times[frame_index])
                         features.append((
                             center[0] / frame.shape[1],
                             center[1] / frame.shape[0],
                             np.log(area / (frame.shape[0] * frame.shape[1])),
-                            np.arctan2(edge[1], edge[0]),
                         ))
             frame_index += 1
     finally:
@@ -91,7 +92,7 @@ def aruco_trajectory(video_path, frame_times, dictionary_name, marker_id):
 
 
 def read_vive_pose_bag(pose_directory, topic='/vive/pose'):
-    """Read PoseStamped header times, XYZ and XYZW from an MCAP bag."""
+    """Read world TCP poses and unchanged header times from an MCAP bag."""
     times, positions, orientations = read_vive_poses(pose_directory, topic)
     if len(times) < 3:
         raise ValueError(f'{topic} contains fewer than three poses')
@@ -138,10 +139,14 @@ def save_plot(path, video_times, video_features, pose_times, pose_features,
 def calibrate(args):
     """Run one calibration and write reviewable results."""
     episode = Path(args.calibration_episode).expanduser().resolve()
-    video_path = episode / 'video.mp4'
-    timing_path = episode / 'video.timing.json'
+    camera_id = resolve_calibration_camera(
+        episode, getattr(args, 'camera_id', None))
+    video_path = resolve_video_path(episode, camera_id)
+    timing_path = video_path.with_suffix('.timing.json')
     pose_directory = episode / 'pose'
     timing = json.loads(timing_path.read_text(encoding='utf-8'))
+    if timing.get('camera_id', camera_id) != camera_id:
+        raise ValueError('video timing camera_id differs from selected camera')
     video_anchor = timing.get('first_receive_unix_ns')
     if video_anchor is None:
         raise ValueError('video timing has no first_receive_unix_ns')
@@ -156,10 +161,13 @@ def calibrate(args):
 
     video_absolute_times = marker_times + video_anchor / 1_000_000_000
     pose_times, positions, orientations = read_vive_pose_bag(pose_directory)
-    marker_features[:, 3] = np.unwrap(marker_features[:, 3])
-    pose_features = np.column_stack((
-        positions, quaternion_rotation_vectors(orientations)))
-    pose_motion_metres = float(np.linalg.norm(np.ptp(positions, axis=0)))
+    reference_position = positions[0]
+    reference_orientation = orientations[0]
+    pose_features, _ = poses_in_reference_frame(
+        positions, orientations, reference_position, reference_orientation)
+    reference_orientation = (
+        reference_orientation / np.linalg.norm(reference_orientation))
+    pose_motion_metres = float(np.linalg.norm(np.ptp(pose_features, axis=0)))
     if pose_motion_metres < args.minimum_pose_motion:
         raise ValueError('Vive calibration motion is too small')
     result = align_feature_trajectories(
@@ -198,7 +206,9 @@ def calibrate(args):
     )
     output = {
         'schema_version': 2,
-        'method': 'multifeature_aruco_tcp_temporal_alignment_v2',
+        'method': 'translation_only_aruco_start_tcp_temporal_alignment_v4',
+        'camera_id': camera_id,
+        'image_field': timing.get('image_field', f'{camera_id}_image'),
         'accepted': accepted,
         'offset_convention': OFFSET_CONVENTION,
         'video_to_pose_offset_seconds': result.offset_seconds,
@@ -212,9 +222,23 @@ def calibrate(args):
         'aruco_detections': len(marker_times),
         'decoded_video_frames': decoded_frames,
         'aruco_detection_ratio': detection_ratio,
-        'video_features': ['center_x', 'center_y', 'log_area', 'angle'],
-        'pose_features': ['x', 'y', 'z', 'rotation_x', 'rotation_y',
-                          'rotation_z'],
+        'video_features': ['center_x', 'center_y', 'log_area'],
+        'pose_features': ['x', 'y', 'z'],
+        'pose_frame': 'recording_start_tcp',
+        'pose_reference': {
+            'definition': 'first_recorded_tcp_pose_after_start',
+            'pose_time_seconds': float(pose_times[0]),
+            'position_xyz': reference_position.tolist(),
+            'orientation_xyzw': reference_orientation.tolist(),
+            'transform_convention': (
+                'T_start_i = inverse(T_world_start) * T_world_i'),
+        },
+        'video_time_anchor_unix_ns': video_anchor,
+        'recording_pose_lead_seconds': float(
+            video_anchor / 1e9 + frame_times[0] - pose_times[0]),
+        'time_basis': (
+            'Video first host receipt + PTS; pose header timestamps. '
+            'The 500 ms pose lead is retained, not subtracted as latency.'),
         'pose_motion_metres': pose_motion_metres,
         'window_offsets_seconds': window_offsets,
         'window_offset_std_seconds': window_std,
@@ -244,15 +268,15 @@ def calibrate(args):
         pose_times, pose_features, result, window_offsets)
     session = episode.parent.parent
     if (session / 'session.yaml').is_file():
-        metadata = read_session(session)
-        calibration = dict(metadata.get('temporal_calibration', {}))
-        calibration.update({
+        calibration = {
             'status': 'accepted' if accepted else 'rejected',
             'result': str(output_path.relative_to(session)),
             'calibrated_at': now_text(),
             'video_to_pose_offset_seconds': result.offset_seconds,
-        })
-        update_session(session, temporal_calibration=calibration)
+            'camera_id': camera_id,
+            'image_field': output['image_field'],
+        }
+        update_temporal_calibration(session, camera_id, calibration)
     print(json.dumps(output, indent=2))
     return 0 if accepted else 2
 
@@ -260,8 +284,10 @@ def calibrate(args):
 def argument_parser():
     """Build the command-line interface."""
     parser = argparse.ArgumentParser(
-        description='Calibrate Action 4/Vive time offset from one episode')
+        description='Calibrate one camera/Vive time offset using translation')
     parser.add_argument('calibration_episode')
+    parser.add_argument('--camera-id', default=None,
+                        help='infer the camera for a single-stream recording')
     parser.add_argument('--aruco-dictionary', default='DICT_4X4_50')
     parser.add_argument('--marker-id', type=int, default=4)
     parser.add_argument('--minimum-offset', type=float, default=-1.0)

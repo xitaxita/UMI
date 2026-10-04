@@ -1,0 +1,61 @@
+{
+  "plan_version": 1,
+  "episodes": [
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0001",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0001",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0002",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0002",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0003",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0003",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0004",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0004",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0005",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0005",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0006",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0006",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0007",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0007",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    },
+    {
+      "item": "online_session_20260929_211408_383321/transformed/episodes/episode_0008",
+      "task": "pick up the white cube and place it on the blue mark",
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0008",
+      "video_to_pose_offset_seconds": -0.09236435301542656
+    }
+  ]
+}

@@ -11,6 +11,7 @@ from launch.actions import (
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
+
 from launch_ros.parameter_descriptions import ParameterValue
 
 from umi_ros2.launch_support import (
@@ -18,6 +19,7 @@ from umi_ros2.launch_support import (
     camera_node,
     rviz_node,
     vive_node,
+    vive_path_node,
 )
 
 
@@ -36,12 +38,22 @@ def generate_launch_description():
     )
     session_output = LaunchConfiguration('session_output')
     warmup_seconds = LaunchConfiguration('warmup_seconds')
+    video_device = LaunchConfiguration('video_device')
+    left_video_device = LaunchConfiguration('left_video_device')
     task = LaunchConfiguration('task')
     vive = vive_node(paths['vive_config'])
     camera = camera_node(
         paths['camera_config'],
         {
             'warmup_seconds': ParameterValue(warmup_seconds, value_type=float),
+            'device_override': ParameterValue(video_device, value_type=str),
+            'realsense_enabled': True,
+            'realsense_config_path': paths['realsense_left_config'],
+            'realsense_device_override': ParameterValue(
+                left_video_device, value_type=str),
+            'preview_width': 320,
+            'preview_height': 180,
+            'preview_fps': 10.0,
             'episode_mode': True,
             'recordings_root': session_output,
             'task': ParameterValue(task, value_type=str),
@@ -64,6 +76,16 @@ def generate_launch_description():
             default_value='5.0',
             description='Minimum camera and pose warmup before recording',
         ),
+        DeclareLaunchArgument(
+            'video_device',
+            default_value='',
+            description='Override the Action 4 device in action4.yaml',
+        ),
+        DeclareLaunchArgument(
+            'left_video_device',
+            default_value='',
+            description='Override the RealSense left color device',
+        ),
         RegisterEventHandler(OnProcessExit(
             target_action=vive,
             on_exit=[EmitEvent(event=Shutdown(
@@ -73,10 +95,11 @@ def generate_launch_description():
         RegisterEventHandler(OnProcessExit(
             target_action=camera,
             on_exit=[EmitEvent(event=Shutdown(
-                reason='Action 4 camera node exited during recording'
+                reason='Online camera coordinator exited during recording'
             ))],
         )),
         vive,
+        vive_path_node(paths['vive_config']),
         rviz_node(paths['online_rviz'], 'umi_online_rviz'),
         camera,
     ])

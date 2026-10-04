@@ -1,0 +1,580 @@
+{
+  "session_id": "online_session_20260930_160029_092182",
+  "session_status": "complete",
+  "task": "pick up the white cube and place it on the blue mark",
+  "session_started_at": "2026-09-30T16:00:29.092+08:00",
+  "session_ended_at": "2026-09-30T16:02:26.534+08:00",
+  "temporal_calibration": {
+    "status": "not_calibrated",
+    "result": null
+  },
+  "checked_at": "2026-09-30T08:11:30.199001+00:00",
+  "method": {
+    "pose_gap_threshold": "1.5 / 90 seconds (16.667 ms)",
+    "image_gap_threshold": "1.5 / 30 seconds (50 ms)",
+    "coverage": "Each decoded MP4 PTS anchored at first_receive_unix_ns must lie between the first/last pose header stamp.",
+    "limitations": "Host receipt/source PTS are not exposure timestamps. No per-camera calibrated offsets. Gap counts and missing-period estimates cannot prove hardware loss or locate it in Tracker/libsurvive/ROS/storage. MP4 count equality verifies accepted-to-decoded frames only; native per-frame camera sequence numbers were not stored."
+  },
+  "episodes": [
+    {
+      "episode": "episode_0001",
+      "indexed_status": "complete",
+      "pose": {
+        "count": 1988,
+        "duration_seconds": 22.133261187,
+        "average_hz": 89.77438901624976,
+        "median_gap_ms": 11.108925,
+        "p95_gap_ms": 11.3236845,
+        "p99_gap_ms": 11.42403746,
+        "min_gap_ms": 10.142925,
+        "max_gap_ms": 22.312863,
+        "non_increasing_timestamps": 0,
+        "large_gap_threshold_ms": 16.666666666666664,
+        "large_gap_count": 5,
+        "gaps_over_100_ms": 0,
+        "estimated_missing_periods_in_large_gaps": 5,
+        "large_gaps": [
+          {
+            "after_sample_index_zero_based": 367,
+            "at_seconds": 4.077868055,
+            "gap_ms": 22.226302,
+            "previous_gap_ms": 10.906706,
+            "following_gap_ms": 11.147287
+          },
+          {
+            "after_sample_index_zero_based": 499,
+            "at_seconds": 5.555838732,
+            "gap_ms": 22.072527,
+            "previous_gap_ms": 11.40027,
+            "following_gap_ms": 11.000616
+          },
+          {
+            "after_sample_index_zero_based": 667,
+            "at_seconds": 7.433614917,
+            "gap_ms": 21.992457,
+            "previous_gap_ms": 11.145221,
+            "following_gap_ms": 11.043183
+          },
+          {
+            "after_sample_index_zero_based": 885,
+            "at_seconds": 9.86687083,
+            "gap_ms": 22.120713,
+            "previous_gap_ms": 11.161673,
+            "following_gap_ms": 11.078649
+          },
+          {
+            "after_sample_index_zero_based": 1462,
+            "at_seconds": 16.288883663,
+            "gap_ms": 22.312863,
+            "previous_gap_ms": 11.134335,
+            "following_gap_ms": 11.103453
+          }
+        ],
+        "first_header_unix_ns": 1790755248265339778,
+        "last_header_unix_ns": 1790755270398600965,
+        "first_record_unix_ns": 1790755248279924444,
+        "last_record_unix_ns": 1790755270399045567,
+        "pose_record_timestamps_strictly_increasing": true,
+        "topic_counts": {
+          "/vive/pose": 1988,
+          "/tf": 1988
+        },
+        "metadata_counts_match": true,
+        "header_frames": {
+          "vive_world": 1988
+        },
+        "all_pose_components_finite": true,
+        "quaternion_norm_min": 0.9999999999999999,
+        "quaternion_norm_max": 1.0000000000000004,
+        "pose_receive_lag_median_ms": 0.729533,
+        "pose_receive_lag_p95_ms": 1.1575658499999997,
+        "pose_receive_lag_max_ms": 14.584666,
+        "tf_receive_lag_median_ms": 1.1135465,
+        "matched_pose_tf_stamp_count": 1988,
+        "five_second_windows": [
+          {
+            "start_seconds": 0,
+            "samples": 450,
+            "average_hz": 89.8007138258742
+          },
+          {
+            "start_seconds": 5,
+            "samples": 446,
+            "average_hz": 89.39819513429374
+          },
+          {
+            "start_seconds": 10,
+            "samples": 450,
+            "average_hz": 90.00084422796358
+          },
+          {
+            "start_seconds": 15,
+            "samples": 449,
+            "average_hz": 89.80010457234204
+          },
+          {
+            "start_seconds": 20,
+            "samples": 193,
+            "average_hz": 90.00945421334319
+          }
+        ]
+      },
+      "images": [
+        {
+          "count": 585,
+          "duration_seconds": 19.485667,
+          "average_hz": 29.970747216402703,
+          "median_gap_ms": 33.334,
+          "p95_gap_ms": 36.334,
+          "p99_gap_ms": 38.056609999999985,
+          "min_gap_ms": 24.333,
+          "max_gap_ms": 40.0,
+          "non_increasing_timestamps": 0,
+          "large_gap_threshold_ms": 50.0,
+          "large_gap_count": 0,
+          "gaps_over_100_ms": 0,
+          "estimated_missing_periods_in_large_gaps": 0,
+          "large_gaps": [],
+          "camera_id": "wrist",
+          "image_field": "wrist_image",
+          "relative_video_path": "episodes/episode_0001/cameras/wrist/video.mp4",
+          "stream": {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "r_frame_rate": "30000/1001",
+            "avg_frame_rate": "585000/19519",
+            "duration": "19.519000",
+            "nb_frames": "585"
+          },
+          "decoded_frames": 585,
+          "accepted_frames": 585,
+          "counts_match": true,
+          "probe_errors": "",
+          "all_frames_have_pts": true,
+          "timing_status": "complete",
+          "identity_matches_index": true,
+          "timing_self_path_matches": true,
+          "first_frame_host_unix_ns": 1790755248868487891,
+          "last_frame_host_unix_ns": 1790755268354154891,
+          "frames_covered_by_pose_header_range": 585,
+          "all_frames_covered": true,
+          "pose_lead_from_header_ms": 603.148113,
+          "pose_lead_from_record_ms": 588.563447,
+          "pose_tail_ms": 2044.446074,
+          "max_bracketing_pose_gap_ms": 22.120713,
+          "source_span_seconds": 19.485659231,
+          "pts_span_vs_source_span_difference_ms": 0.007769,
+          "existing_validation_matches": true,
+          "source_completeness": "not_verified"
+        },
+        {
+          "count": 583,
+          "duration_seconds": 19.413667,
+          "average_hz": 29.97888034238972,
+          "median_gap_ms": 33.333,
+          "p95_gap_ms": 33.666,
+          "p99_gap_ms": 33.667,
+          "min_gap_ms": 33.0,
+          "max_gap_ms": 33.667,
+          "non_increasing_timestamps": 0,
+          "large_gap_threshold_ms": 50.0,
+          "large_gap_count": 0,
+          "gaps_over_100_ms": 0,
+          "estimated_missing_periods_in_large_gaps": 0,
+          "large_gaps": [],
+          "camera_id": "left",
+          "image_field": "left_image",
+          "relative_video_path": "episodes/episode_0001/cameras/left/video.mp4",
+          "stream": {
+            "codec_name": "h264",
+            "width": 640,
+            "height": 480,
+            "r_frame_rate": "30000/1001",
+            "avg_frame_rate": "583000/19447",
+            "duration": "19.447000",
+            "nb_frames": "583"
+          },
+          "decoded_frames": 583,
+          "accepted_frames": 583,
+          "counts_match": true,
+          "probe_errors": "",
+          "all_frames_have_pts": true,
+          "timing_status": "complete",
+          "identity_matches_index": true,
+          "timing_self_path_matches": true,
+          "first_frame_host_unix_ns": 1790755248869472407,
+          "last_frame_host_unix_ns": 1790755268283139407,
+          "frames_covered_by_pose_header_range": 583,
+          "all_frames_covered": true,
+          "pose_lead_from_header_ms": 604.132629,
+          "pose_lead_from_record_ms": 589.547963,
+          "pose_tail_ms": 2115.461558,
+          "max_bracketing_pose_gap_ms": 22.120713,
+          "source_span_seconds": 19.413597672,
+          "pts_span_vs_source_span_difference_ms": 0.069328,
+          "existing_validation_matches": true,
+          "source_completeness": "not_verified"
+        }
+      ]
+    },
+    {
+      "episode": "episode_0002",
+      "indexed_status": "complete",
+      "pose": {
+        "count": 1342,
+        "duration_seconds": 14.933303519,
+        "average_hz": 89.7992864267316,
+        "median_gap_ms": 11.110664,
+        "p95_gap_ms": 11.320941,
+        "p99_gap_ms": 11.437986,
+        "min_gap_ms": 10.599294,
+        "max_gap_ms": 22.210008,
+        "non_increasing_timestamps": 0,
+        "large_gap_threshold_ms": 16.666666666666664,
+        "large_gap_count": 3,
+        "gaps_over_100_ms": 0,
+        "estimated_missing_periods_in_large_gaps": 3,
+        "large_gaps": [
+          {
+            "after_sample_index_zero_based": 697,
+            "at_seconds": 7.744622362,
+            "gap_ms": 22.01554,
+            "previous_gap_ms": 11.24211,
+            "following_gap_ms": 11.103857
+          },
+          {
+            "after_sample_index_zero_based": 714,
+            "at_seconds": 7.944437653,
+            "gap_ms": 22.130857,
+            "previous_gap_ms": 11.153015,
+            "following_gap_ms": 11.154541
+          },
+          {
+            "after_sample_index_zero_based": 740,
+            "at_seconds": 8.244455596,
+            "gap_ms": 22.210008,
+            "previous_gap_ms": 11.150336,
+            "following_gap_ms": 11.059528
+          }
+        ],
+        "first_header_unix_ns": 1790755300787683560,
+        "last_header_unix_ns": 1790755315720987079,
+        "first_record_unix_ns": 1790755300788406233,
+        "last_record_unix_ns": 1790755315721342859,
+        "pose_record_timestamps_strictly_increasing": true,
+        "topic_counts": {
+          "/vive/pose": 1342,
+          "/tf": 1342
+        },
+        "metadata_counts_match": true,
+        "header_frames": {
+          "vive_world": 1342
+        },
+        "all_pose_components_finite": true,
+        "quaternion_norm_min": 0.9999999999999999,
+        "quaternion_norm_max": 1.0000000000000004,
+        "pose_receive_lag_median_ms": 0.6540245,
+        "pose_receive_lag_p95_ms": 1.08593435,
+        "pose_receive_lag_max_ms": 2.215567,
+        "tf_receive_lag_median_ms": 0.996183,
+        "matched_pose_tf_stamp_count": 1342,
+        "five_second_windows": [
+          {
+            "start_seconds": 0,
+            "samples": 451,
+            "average_hz": 90.00136976684703
+          },
+          {
+            "start_seconds": 5,
+            "samples": 447,
+            "average_hz": 89.39795177482333
+          },
+          {
+            "start_seconds": 10,
+            "samples": 444,
+            "average_hz": 90.00086407940194
+          }
+        ]
+      },
+      "images": [
+        {
+          "count": 391,
+          "duration_seconds": 13.009667,
+          "average_hz": 29.977708115050138,
+          "median_gap_ms": 33.333,
+          "p95_gap_ms": 36.33355,
+          "p99_gap_ms": 38.667,
+          "min_gap_ms": 27.0,
+          "max_gap_ms": 40.666,
+          "non_increasing_timestamps": 0,
+          "large_gap_threshold_ms": 50.0,
+          "large_gap_count": 0,
+          "gaps_over_100_ms": 0,
+          "estimated_missing_periods_in_large_gaps": 0,
+          "large_gaps": [],
+          "camera_id": "wrist",
+          "image_field": "wrist_image",
+          "relative_video_path": "episodes/episode_0002/cameras/wrist/video.mp4",
+          "stream": {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "r_frame_rate": "30000/1001",
+            "avg_frame_rate": "391000/13043",
+            "duration": "13.043000",
+            "nb_frames": "391"
+          },
+          "decoded_frames": 391,
+          "accepted_frames": 391,
+          "counts_match": true,
+          "probe_errors": "",
+          "all_frames_have_pts": true,
+          "timing_status": "complete",
+          "identity_matches_index": true,
+          "timing_self_path_matches": true,
+          "first_frame_host_unix_ns": 1790755301387597113,
+          "last_frame_host_unix_ns": 1790755314397264113,
+          "frames_covered_by_pose_header_range": 391,
+          "all_frames_covered": true,
+          "pose_lead_from_header_ms": 599.913553,
+          "pose_lead_from_record_ms": 599.19088,
+          "pose_tail_ms": 1323.722966,
+          "max_bracketing_pose_gap_ms": 11.523953,
+          "source_span_seconds": 13.009562722,
+          "pts_span_vs_source_span_difference_ms": 0.104278,
+          "existing_validation_matches": true,
+          "source_completeness": "not_verified"
+        },
+        {
+          "count": 391,
+          "duration_seconds": 13.009333,
+          "average_hz": 29.978477759005784,
+          "median_gap_ms": 33.333,
+          "p95_gap_ms": 33.667,
+          "p99_gap_ms": 33.667,
+          "min_gap_ms": 33.0,
+          "max_gap_ms": 34.0,
+          "non_increasing_timestamps": 0,
+          "large_gap_threshold_ms": 50.0,
+          "large_gap_count": 0,
+          "gaps_over_100_ms": 0,
+          "estimated_missing_periods_in_large_gaps": 0,
+          "large_gaps": [],
+          "camera_id": "left",
+          "image_field": "left_image",
+          "relative_video_path": "episodes/episode_0002/cameras/left/video.mp4",
+          "stream": {
+            "codec_name": "h264",
+            "width": 640,
+            "height": 480,
+            "r_frame_rate": "30000/1001",
+            "avg_frame_rate": "146625/4891",
+            "duration": "13.042667",
+            "nb_frames": "391"
+          },
+          "decoded_frames": 391,
+          "accepted_frames": 391,
+          "counts_match": true,
+          "probe_errors": "",
+          "all_frames_have_pts": true,
+          "timing_status": "complete",
+          "identity_matches_index": true,
+          "timing_self_path_matches": true,
+          "first_frame_host_unix_ns": 1790755301338907431,
+          "last_frame_host_unix_ns": 1790755314348240431,
+          "frames_covered_by_pose_header_range": 391,
+          "all_frames_covered": true,
+          "pose_lead_from_header_ms": 551.223871,
+          "pose_lead_from_record_ms": 550.501198,
+          "pose_tail_ms": 1372.746648,
+          "max_bracketing_pose_gap_ms": 22.210008,
+          "source_span_seconds": 13.009499772,
+          "pts_span_vs_source_span_difference_ms": -0.166772,
+          "existing_validation_matches": true,
+          "source_completeness": "not_verified"
+        }
+      ]
+    },
+    {
+      "episode": "episode_0003",
+      "indexed_status": "complete",
+      "pose": {
+        "count": 1240,
+        "duration_seconds": 13.788750458,
+        "average_hz": 89.85585777144536,
+        "median_gap_ms": 11.109997,
+        "p95_gap_ms": 11.328881599999999,
+        "p99_gap_ms": 11.438150299999998,
+        "min_gap_ms": 10.534686,
+        "max_gap_ms": 22.379584,
+        "non_increasing_timestamps": 0,
+        "large_gap_threshold_ms": 16.666666666666664,
+        "large_gap_count": 2,
+        "gaps_over_100_ms": 0,
+        "estimated_missing_periods_in_large_gaps": 2,
+        "large_gaps": [
+          {
+            "after_sample_index_zero_based": 34,
+            "at_seconds": 0.377658162,
+            "gap_ms": 22.379584,
+            "previous_gap_ms": 10.925395,
+            "following_gap_ms": 10.948684
+          },
+          {
+            "after_sample_index_zero_based": 539,
+            "at_seconds": 5.999884795,
+            "gap_ms": 22.308069,
+            "previous_gap_ms": 10.938679,
+            "following_gap_ms": 11.094708
+          }
+        ],
+        "first_header_unix_ns": 1790755324565408060,
+        "last_header_unix_ns": 1790755338354158518,
+        "first_record_unix_ns": 1790755324566945859,
+        "last_record_unix_ns": 1790755338354446423,
+        "pose_record_timestamps_strictly_increasing": true,
+        "topic_counts": {
+          "/vive/pose": 1240,
+          "/tf": 1240
+        },
+        "metadata_counts_match": true,
+        "header_frames": {
+          "vive_world": 1240
+        },
+        "all_pose_components_finite": true,
+        "quaternion_norm_min": 0.9999999999999999,
+        "quaternion_norm_max": 1.0000000000000004,
+        "pose_receive_lag_median_ms": 0.5176795000000001,
+        "pose_receive_lag_p95_ms": 0.9267295999999999,
+        "pose_receive_lag_max_ms": 2.013341,
+        "tf_receive_lag_median_ms": 0.7708505,
+        "matched_pose_tf_stamp_count": 1240,
+        "five_second_windows": [
+          {
+            "start_seconds": 0,
+            "samples": 450,
+            "average_hz": 89.80234235041647
+          },
+          {
+            "start_seconds": 5,
+            "samples": 449,
+            "average_hz": 89.79957546160277
+          },
+          {
+            "start_seconds": 10,
+            "samples": 341,
+            "average_hz": 89.99782407760836
+          }
+        ]
+      },
+      "images": [
+        {
+          "count": 357,
+          "duration_seconds": 11.877,
+          "average_hz": 29.97389913277764,
+          "median_gap_ms": 33.333,
+          "p95_gap_ms": 36.667,
+          "p99_gap_ms": 38.333,
+          "min_gap_ms": 26.667,
+          "max_gap_ms": 39.0,
+          "non_increasing_timestamps": 0,
+          "large_gap_threshold_ms": 50.0,
+          "large_gap_count": 0,
+          "gaps_over_100_ms": 0,
+          "estimated_missing_periods_in_large_gaps": 0,
+          "large_gaps": [],
+          "camera_id": "wrist",
+          "image_field": "wrist_image",
+          "relative_video_path": "episodes/episode_0003/cameras/wrist/video.mp4",
+          "stream": {
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "r_frame_rate": "30000/1001",
+            "avg_frame_rate": "1071000/35731",
+            "duration": "11.910333",
+            "nb_frames": "357"
+          },
+          "decoded_frames": 357,
+          "accepted_frames": 357,
+          "counts_match": true,
+          "probe_errors": "",
+          "all_frames_have_pts": true,
+          "timing_status": "complete",
+          "identity_matches_index": true,
+          "timing_self_path_matches": true,
+          "first_frame_host_unix_ns": 1790755325174878221,
+          "last_frame_host_unix_ns": 1790755337051878221,
+          "frames_covered_by_pose_header_range": 357,
+          "all_frames_covered": true,
+          "pose_lead_from_header_ms": 609.470161,
+          "pose_lead_from_record_ms": 607.932362,
+          "pose_tail_ms": 1302.280297,
+          "max_bracketing_pose_gap_ms": 22.308069,
+          "source_span_seconds": 11.877067209,
+          "pts_span_vs_source_span_difference_ms": -0.067209,
+          "existing_validation_matches": true,
+          "source_completeness": "not_verified"
+        },
+        {
+          "count": 355,
+          "duration_seconds": 11.808333,
+          "average_hz": 29.978829357200546,
+          "median_gap_ms": 33.333,
+          "p95_gap_ms": 33.66635,
+          "p99_gap_ms": 33.667,
+          "min_gap_ms": 33.0,
+          "max_gap_ms": 33.667,
+          "non_increasing_timestamps": 0,
+          "large_gap_threshold_ms": 50.0,
+          "large_gap_count": 0,
+          "gaps_over_100_ms": 0,
+          "estimated_missing_periods_in_large_gaps": 0,
+          "large_gaps": [],
+          "camera_id": "left",
+          "image_field": "left_image",
+          "relative_video_path": "episodes/episode_0003/cameras/left/video.mp4",
+          "stream": {
+            "codec_name": "h264",
+            "width": 640,
+            "height": 480,
+            "r_frame_rate": "30000/1001",
+            "avg_frame_rate": "42600/1421",
+            "duration": "11.841667",
+            "nb_frames": "355"
+          },
+          "decoded_frames": 355,
+          "accepted_frames": 355,
+          "counts_match": true,
+          "probe_errors": "",
+          "all_frames_have_pts": true,
+          "timing_status": "complete",
+          "identity_matches_index": true,
+          "timing_self_path_matches": true,
+          "first_frame_host_unix_ns": 1790755325222205924,
+          "last_frame_host_unix_ns": 1790755337030538924,
+          "frames_covered_by_pose_header_range": 355,
+          "all_frames_covered": true,
+          "pose_lead_from_header_ms": 656.797864,
+          "pose_lead_from_record_ms": 655.260065,
+          "pose_tail_ms": 1323.619594,
+          "max_bracketing_pose_gap_ms": 11.683101,
+          "source_span_seconds": 11.808326314,
+          "pts_span_vs_source_span_difference_ms": 0.006686,
+          "existing_validation_matches": true,
+          "source_completeness": "not_verified"
+        }
+      ]
+    }
+  ],
+  "inspection_elapsed_seconds": 1.9850731339975027,
+  "source_session_path": "/home/xing/Documents/UMI/recordings/online_session_20260930_160029_092182",
+  "provenance": {
+    "source_node_log": "/home/xing/.ros/log/python_65267_1790755229110.log",
+    "path_node_log": "/home/xing/.ros/log/python_65268_1790755229038.log",
+    "verified_source": "Real pysurvive first tracked object at configured 90 Hz",
+    "verified_path_process": "Separate vive_path_node started with 30 Hz sampling",
+    "hardware_acceptance_scope": "Three short user-recorded episodes in a 117-second launch; raw source frequency and host-time coverage. Actual Path frequency, RViz rendering and longer recordings are not measured by these raw files."
+  }
+}

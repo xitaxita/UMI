@@ -1,4 +1,7 @@
+"""Install the UMI ROS runtime, launch assets and command entry points."""
+
 from glob import glob
+
 from setuptools import find_packages, setup
 
 
@@ -28,6 +31,7 @@ setup(
     entry_points={
         'console_scripts': [
             'vive_pose_node = umi_ros2.vive.pose_node:main',
+            'vive_path_node = umi_ros2.vive.path_node:main',
             'h264_capture_node = '
             'umi_ros2.camera.h264_capture_node:main',
             'episode_keyboard = umi_ros2.camera.episode_keyboard:main',
@@ -39,7 +43,11 @@ setup(
             'umi_ros2.visualization.replay_path_node:main',
             'session_replay_node = '
             'umi_ros2.visualization.session_replay_node:main',
+            'frame_alignment_viewer = '
+            'umi_ros2.visualization.frame_alignment_viewer:main',
             'align_session = umi_ros2.postprocess.align_session:main',
+            'expand_session = umi_ros2.postprocess.expand_session:main',
+            'localize_session = umi_ros2.postprocess.localize_session:main',
             'transform_session = '
             'umi_ros2.postprocess.transform_session:main',
             'export_hdf5 = umi_ros2.postprocess.export_hdf5:main',

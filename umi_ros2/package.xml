@@ -22,6 +22,7 @@
   <exec_depend>gir1.2-gstreamer-1.0</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-matplotlib</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
   <exec_depend>python3-h5py</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>

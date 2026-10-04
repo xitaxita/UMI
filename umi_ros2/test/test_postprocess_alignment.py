@@ -8,6 +8,7 @@ import pytest
 
 from umi_ros2.postprocess.align_session import (
     align,
+    align_episode,
     load_offset,
     resolve_episodes,
 )
@@ -76,6 +77,42 @@ def test_resolves_only_ordinary_session_episodes(tmp_path):
     _, episodes = resolve_episodes(session)
     assert [episode.name for episode in episodes] == [
         'episode_0002', 'episode_0010']
+
+
+def test_align_reads_wrist_camera_directory(tmp_path, monkeypatch):
+    """Alignment resolves the new wrist MP4 and its own timing file."""
+    episode = tmp_path / 'episode_0001'
+    wrist = episode / 'cameras' / 'wrist'
+    wrist.mkdir(parents=True)
+    video = wrist / 'video.mp4'
+    video.touch()
+    (wrist / 'video.timing.json').write_text(json.dumps({
+        'first_receive_unix_ns': 1_000_000_000,
+    }))
+    pose = episode / 'pose'
+    pose.mkdir()
+    (pose / 'metadata.yaml').touch()
+    monkeypatch.setattr(
+        'umi_ros2.postprocess.align_session.video_frame_times',
+        lambda path: np.array([0.0, 0.05]))
+    monkeypatch.setattr(
+        'umi_ros2.postprocess.align_session.read_vive_poses',
+        lambda path: (
+            np.array([0.95, 1.0, 1.05, 1.1]),
+            np.zeros((4, 3)),
+            np.tile([0.0, 0.0, 0.0, 1.0], (4, 1)),
+        ))
+
+    report = align_episode(
+        episode, tmp_path / 'output', 0.0, 'test', 0.1, 1.0)
+    assert report['status'] == 'accepted'
+    assert report['source_video'] == str(video)
+    assert report['pose_reference_definition'] == (
+        'first_recorded_tcp_pose_after_start')
+    with np.load(tmp_path / 'output' / 'aligned_frames.npz') as arrays:
+        assert float(arrays['reference_pose_time_seconds']) == 0.95
+        assert float(arrays['pose_query_time_seconds'][0]) == 1.0
+    assert resolve_episodes(episode)[1] == [episode]
 
 
 def test_loads_only_accepted_calibration_result(tmp_path):

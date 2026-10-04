@@ -39,8 +39,11 @@ class ReplayPathNode(Node):
 
     def _reset(self, request, response):
         """Clear the path before the next session recording is replayed."""
+        frame_id = self._path.header.frame_id
         self._path = Path()
-        self._publisher.publish(self._path)
+        if frame_id:
+            self._path.header.frame_id = frame_id
+            self._publisher.publish(self._path)
         response.success = True
         response.message = 'replay path reset'
         return response

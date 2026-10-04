@@ -3,6 +3,7 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+
 from launch_ros.actions import Node
 
 
@@ -12,6 +13,8 @@ def asset_paths():
     return {
         'vive_config': os.path.join(share, 'config', 'vive.yaml'),
         'camera_config': os.path.join(share, 'config', 'action4.yaml'),
+        'realsense_left_config': os.path.join(
+            share, 'config', 'realsense_left.yaml'),
         'online_rviz': os.path.join(share, 'rviz', 'online.rviz'),
     }
 
@@ -22,6 +25,17 @@ def vive_node(config):
         package='umi_ros2',
         executable='vive_pose_node',
         name='vive_pose_node',
+        output='screen',
+        parameters=[config],
+    )
+
+
+def vive_path_node(config):
+    """Build the independent live pose-to-path visualization process."""
+    return Node(
+        package='umi_ros2',
+        executable='vive_path_node',
+        name='vive_path_node',
         output='screen',
         parameters=[config],
     )

@@ -10,6 +10,7 @@ import numpy as np
 from umi_ros2.common.ordering import natural_key
 
 from .episode_transform import transform_to_episode_frame
+from .pose_io import read_vive_poses
 
 
 CONTRACT_VERSION = 1
@@ -45,14 +46,35 @@ def transform_item(item, destination, overwrite=False):
     if destination.exists() and not overwrite:
         raise FileExistsError(
             f'output already exists; use --overwrite: {destination}')
+    alignment = json.loads(
+        (item / 'alignment.json').read_text(encoding='utf-8'))
+    reference_definition = 'first_valid_aligned_video_frame_pose'
+    reference_time = None
+    reference = {}
     with np.load(item / 'aligned_frames.npz') as source:
+        if 'reference_position_xyz' in source:
+            reference = {
+                'reference_position': source['reference_position_xyz'],
+                'reference_orientation': source['reference_orientation_xyzw'],
+            }
+            reference_time = float(source['reference_pose_time_seconds'])
+        else:
+            # Recover a recording-start reference for older aligned outputs.
+            pose_path = alignment.get('source_pose')
+            if not pose_path and alignment.get('source_episode'):
+                pose_path = str(Path(alignment['source_episode']) / 'pose')
+            if pose_path and (Path(pose_path) / 'metadata.yaml').is_file():
+                times, positions, orientations = read_vive_poses(pose_path)
+                reference = {'reference_position': positions[0],
+                             'reference_orientation': orientations[0]}
+                reference_time = float(times[0])
+        if reference:
+            reference_definition = 'first_recorded_tcp_pose_after_start'
         transformed = transform_to_episode_frame(
             source['frame_index'], source['video_pts_seconds'],
             source['video_time_seconds'], source['pose_query_time_seconds'],
             source['valid'], source['position_xyz'],
-            source['orientation_xyzw'])
-    alignment = json.loads(
-        (item / 'alignment.json').read_text(encoding='utf-8'))
+            source['orientation_xyzw'], **reference)
     destination.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         destination / 'episode_frames.npz',
@@ -69,6 +91,8 @@ def transform_item(item, destination, overwrite=False):
         reference_position_xyz=transformed.reference_position_xyz,
         reference_orientation_xyzw=(
             transformed.reference_orientation_xyzw),
+        reference_pose_time_seconds=np.asarray(
+            np.nan if reference_time is None else reference_time),
     )
     _write_csv(destination / 'episode_frames.csv', transformed)
     report = {
@@ -82,7 +106,8 @@ def transform_item(item, destination, overwrite=False):
         'offset_source': alignment.get('offset_source'),
         'frame_count': len(transformed.frame_index),
         'valid_frame_count': int(np.count_nonzero(transformed.valid)),
-        'reference_definition': 'first_valid_aligned_video_frame_pose',
+        'reference_definition': reference_definition,
+        'reference_pose_time_seconds': reference_time,
         'transform_convention': (
             'T_episode_i = inverse(T_world_reference) * T_world_i'),
         'reference_frame_index': transformed.reference_frame_index,

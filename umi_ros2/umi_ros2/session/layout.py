@@ -15,7 +15,44 @@ CALIBRATION_PATTERN = re.compile(r'^calibration_(\d+)$')
 # Raw calibration inputs copied to a new session; derived results never are.
 CALIBRATION_RAW_FILES = (
     'video.mp4', 'video.timing.json', 'video.validation.json')
-CALIBRATION_RAW_DIRECTORIES = ('pose',)
+CALIBRATION_RAW_DIRECTORIES = ('pose', 'cameras')
+
+
+def camera_video_path(recording, camera_id):
+    """Return the canonical MP4 path for one recorded camera."""
+    return Path(recording) / 'cameras' / camera_id / 'video.mp4'
+
+
+def resolve_video_path(recording, camera_id='wrist'):
+    """Read the camera directory, accepting legacy root wrist files."""
+    current = camera_video_path(recording, camera_id)
+    if current.parent.exists():
+        return current
+    legacy = Path(recording) / 'video.mp4'
+    if (camera_id == 'wrist'
+            and (legacy.exists()
+                 or legacy.with_suffix('.timing.json').exists())):
+        return legacy
+    return current
+
+
+def resolve_calibration_camera(recording, camera_id=None):
+    """Infer one calibration stream; legacy recordings default to wrist."""
+    if camera_id is not None:
+        if not re.fullmatch(r'[A-Za-z0-9_]+', camera_id):
+            raise ValueError('camera_id must be a path-safe ID')
+        return camera_id
+    videos = list((Path(recording) / 'cameras').glob('*/video.mp4'))
+    return videos[0].parent.name if len(videos) == 1 else 'wrist'
+
+
+def update_temporal_calibration(session, camera_id, result):
+    """Replace one camera result and retain the wrist compatibility view."""
+    metadata = read_session(session)
+    metadata.setdefault('temporal_calibrations', {})[camera_id] = result
+    if camera_id == 'wrist':
+        metadata['temporal_calibration'] = result.copy()
+    _write(Path(session), metadata)
 
 
 def now_text():
@@ -38,14 +75,14 @@ def session_task(metadata):
     return normalize_task(metadata.get('task'))
 
 
-def create_online_session(recordings_root, task=''):
+def create_online_session(recordings_root, task='', image_streams=None):
     """Create one single-task online session with calibration and episodes."""
     root = Path(recordings_root).expanduser().resolve()
     session = root / f'online_session_{timestamp_id()}'
     session.mkdir(parents=True, exist_ok=False)
     (session / 'calibration').mkdir()
     (session / 'episodes').mkdir()
-    _write(session, {
+    metadata = {
         'schema_version': SCHEMA_VERSION,
         'session_id': session.name,
         'task': normalize_task(task),
@@ -61,8 +98,12 @@ def create_online_session(recordings_root, task=''):
             'status': 'not_calibrated',
             'result': None,
         },
+        'temporal_calibrations': {},
         'recordings': [],
-    })
+    }
+    if image_streams is not None:
+        metadata['image_streams'] = list(image_streams)
+    _write(session, metadata)
     return session
 
 
@@ -75,8 +116,9 @@ def update_session(session, **changes):
 
 
 def register_recording(
-        session, recording, kind, status='complete', copied_from=None):
-    """Append a completed online recording to the session index."""
+        session, recording, kind, status='complete', copied_from=None,
+        image_streams=None):
+    """Index one recording, replacing an earlier attempt at the same path."""
     session = Path(session)
     metadata = read_session(session)
     item = {
@@ -89,7 +131,15 @@ def register_recording(
     if copied_from is not None:
         # Provenance only: post-processing never reads this field.
         item['copied_from'] = str(copied_from)
-    metadata.setdefault('recordings', []).append(item)
+    if image_streams is not None:
+        item['image_streams'] = list(image_streams)
+    recordings = metadata.setdefault('recordings', [])
+    for index, previous in enumerate(recordings):
+        if previous.get('path') == item['path']:
+            recordings[index] = item
+            break
+    else:
+        recordings.append(item)
     _write(session, metadata)
 
 
@@ -132,9 +182,15 @@ def calibration_directories(session):
     return sorted(found, key=calibration_number)
 
 
-def latest_calibration(session):
-    """Return the highest-numbered (newest) calibration directory."""
-    candidates = calibration_directories(session)
+def latest_calibration(session, camera_id='wrist'):
+    """Return the newest recording for a camera; legacy consumers use wrist."""
+    metadata = read_session(session)
+    excluded = {item.get('path') for item in metadata.get('recordings', [])
+                if item.get('kind') == 'calibration'
+                and item.get('status') in ('failed', 'rejected')}
+    candidates = [path for path in calibration_directories(session)
+                  if str(path.relative_to(session)) not in excluded
+                  and resolve_calibration_camera(path) == camera_id]
     if not candidates:
         raise ValueError(f'session contains no calibration episode: {session}')
     return candidates[-1]
@@ -152,7 +208,8 @@ def copy_calibration_raw(source_session, target_session):
     target_session = Path(target_session)
     source_metadata = read_session(source_session)
     complete = {
-        item.get('path') for item in source_metadata.get('recordings', [])
+        item.get('path'): item
+        for item in source_metadata.get('recordings', [])
         if item.get('kind') == 'calibration'
         and item.get('status') == 'complete'
     }
@@ -163,10 +220,11 @@ def copy_calibration_raw(source_session, target_session):
         relative = str(source.relative_to(source_session))
         if relative not in complete:
             continue
-        missing = [
-            name for name in ('video.mp4', 'video.timing.json', 'pose')
-            if not (source / name).exists()
-        ]
+        video = resolve_video_path(source, resolve_calibration_camera(source))
+        required = (video, video.with_suffix('.timing.json'),
+                    source / 'pose')
+        missing = [str(path.relative_to(source))
+                   for path in required if not path.exists()]
         if missing:
             raise ValueError(
                 f'calibration {source} is missing {", ".join(missing)}')
@@ -180,26 +238,30 @@ def copy_calibration_raw(source_session, target_session):
                 if (source / name).is_file():
                     shutil.copy2(source / name, partial / name)
             for name in CALIBRATION_RAW_DIRECTORIES:
-                shutil.copytree(source / name, partial / name)
+                if (source / name).is_dir():
+                    shutil.copytree(source / name, partial / name)
             partial.rename(target)
         except BaseException:
             shutil.rmtree(partial, ignore_errors=True)
             raise
         register_recording(
             target_session, target, 'calibration',
-            copied_from=f'{source_session.name}/{relative}')
+            copied_from=f'{source_session.name}/{relative}',
+            image_streams=complete[relative].get('image_streams'))
         copied.append(target)
     return copied
 
 
-def switch_session(previous_session, recordings_root, task=''):
+def switch_session(previous_session, recordings_root, task='',
+                   image_streams=None):
     """Open the next single-task session and copy raw calibrations into it.
 
     All-or-nothing: on failure the new session is removed and the previous
     session is left untouched and active. Returns ``(session, copied)``.
     """
     previous_session = Path(previous_session)
-    session = create_online_session(recordings_root, task)
+    session = create_online_session(
+        recordings_root, task, image_streams=image_streams)
     try:
         copied = copy_calibration_raw(previous_session, session)
     except BaseException:

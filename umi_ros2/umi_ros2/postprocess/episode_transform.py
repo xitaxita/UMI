@@ -50,10 +50,50 @@ def rotate_vector(quaternion, vector):
     )[:3]
 
 
+def poses_in_reference_frame(
+        positions, orientations, reference_position, reference_orientation):
+    """Express world poses in one fixed TCP reference frame."""
+    positions = np.asarray(positions, dtype=np.float64)
+    orientations = np.asarray(orientations, dtype=np.float64)
+    reference_position = np.asarray(reference_position, dtype=np.float64)
+    reference_orientation = np.asarray(
+        reference_orientation, dtype=np.float64)
+    if (positions.ndim != 2 or positions.shape[1] != 3
+            or orientations.shape != (len(positions), 4)):
+        raise ValueError('pose arrays have incompatible shapes')
+    if (reference_position.shape != (3,)
+            or not np.isfinite(reference_position).all()
+            or reference_orientation.shape != (4,)):
+        raise ValueError('episode reference pose is invalid')
+    norm = np.linalg.norm(reference_orientation)
+    if not np.isfinite(norm) or norm < 1e-12:
+        raise ValueError('episode reference orientation is invalid')
+    if not np.isfinite(positions).all():
+        raise ValueError('pose positions are not finite')
+    inverse_reference = quaternion_conjugate(reference_orientation / norm)
+    local_positions = np.empty_like(positions)
+    local_orientations = np.empty_like(orientations)
+    for index, (position, orientation) in enumerate(
+            zip(positions, orientations)):
+        norm = np.linalg.norm(orientation)
+        if not np.isfinite(norm) or norm < 1e-12:
+            raise ValueError(f'frame {index} orientation is invalid')
+        local_positions[index] = rotate_vector(
+            inverse_reference, position - reference_position)
+        local_orientation = quaternion_multiply(
+            inverse_reference, orientation / norm)
+        local_orientation /= np.linalg.norm(local_orientation)
+        if local_orientation[3] < 0:
+            local_orientation = -local_orientation
+        local_orientations[index] = local_orientation
+    return local_positions, local_orientations
+
+
 def transform_to_episode_frame(
         frame_index, video_pts_seconds, video_time_seconds,
-        pose_query_time_seconds, valid, positions, orientations):
-    """Rebase valid poses to the first valid aligned video-frame pose."""
+        pose_query_time_seconds, valid, positions, orientations,
+        reference_position=None, reference_orientation=None):
+    """Rebase valid poses; external recording references use frame index -1."""
     frame_index = np.asarray(frame_index, dtype=np.int64)
     video_pts_seconds = np.asarray(video_pts_seconds, dtype=np.float64)
     video_time_seconds = np.asarray(video_time_seconds, dtype=np.float64)
@@ -73,31 +113,28 @@ def transform_to_episode_frame(
     valid_indices = np.flatnonzero(valid)
     if not len(valid_indices):
         raise ValueError('episode contains no valid aligned frame')
-    reference_index = int(valid_indices[0])
-    reference_position = positions[reference_index]
-    reference_orientation = orientations[reference_index]
+    if reference_position is None and reference_orientation is None:
+        reference_index = int(valid_indices[0])
+        reference_position = positions[reference_index]
+        reference_orientation = orientations[reference_index]
+    elif reference_position is None or reference_orientation is None:
+        raise ValueError(
+            'reference position and orientation are both required')
+    else:
+        reference_index = -1
+    reference_position = np.asarray(reference_position, dtype=np.float64)
+    reference_orientation = np.asarray(
+        reference_orientation, dtype=np.float64)
     norm = np.linalg.norm(reference_orientation)
     if not np.isfinite(norm) or norm < 1e-12:
         raise ValueError('episode reference orientation is invalid')
     reference_orientation = reference_orientation / norm
-    inverse_reference = quaternion_conjugate(reference_orientation)
-
     local_positions = np.full((count, 3), np.nan, dtype=np.float64)
     local_orientations = np.full((count, 4), np.nan, dtype=np.float64)
-    for index in valid_indices:
-        orientation = orientations[index]
-        orientation_norm = np.linalg.norm(orientation)
-        if not np.isfinite(orientation_norm) or orientation_norm < 1e-12:
-            raise ValueError(f'frame {index} orientation is invalid')
-        orientation = orientation / orientation_norm
-        local_positions[index] = rotate_vector(
-            inverse_reference, positions[index] - reference_position)
-        local_orientation = quaternion_multiply(
-            inverse_reference, orientation)
-        local_orientation /= np.linalg.norm(local_orientation)
-        if local_orientation[3] < 0:
-            local_orientation = -local_orientation
-        local_orientations[index] = local_orientation
+    local_positions[valid_indices], local_orientations[valid_indices] = (
+        poses_in_reference_frame(
+            positions[valid_indices], orientations[valid_indices],
+            reference_position, reference_orientation))
 
     return EpisodeFrameData(
         frame_index=frame_index,

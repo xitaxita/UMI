@@ -8,15 +8,20 @@ vive_pose_node:
     tracker_frame: vive_tracker
     child_frame: gripper_tcp
     pose_topic: vive/pose
-    path_topic: vive/path
-    max_path_points: 10000
     publish_hz: 90.0
     publish_tf: true
-    # Measured vive_tracker -> gripper_tcp rigid transform (D-020, D-022).
+    # Updated 2026-10-04 from the user's 3Dprint/UMI/co2_in_co1.txt (D-020).
     # T maps gripper_tcp coordinates into vive_tracker; ROS XYZW order.
     # This is the only copy: the node reads it at startup, and
     # `ros2 param set /vive_pose_node <name> "[...]"` applies a validated
     # value live (not written back here). Write every number with a decimal
     # point so ROS reads a double array.
-    tracker_to_tcp_translation_m: [0.0, -0.080371453, 0.194957425]
-    tracker_to_tcp_rotation_xyzw: [0.628736470, -0.628736470, 0.323559039, 0.323559039]
+    tracker_to_tcp_translation_m: [0.0, -0.194899844, 0.080510987]
+    tracker_to_tcp_rotation_xyzw: [0.457263310, 0.0, 0.0, 0.889331359]
+
+vive_path_node:
+  ros__parameters:
+    pose_topic: vive/pose
+    path_topic: vive/path
+    sample_hz: 30.0
+    max_path_points: 10000

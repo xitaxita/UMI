@@ -18,9 +18,9 @@ import yaml
 
 
 CONFIG = Path(__file__).parents[1] / 'config' / 'vive.yaml'
-# Values accepted in D-020 (remeasured 2026-09-21).
-D020_TRANSLATION = (0.0, -0.080371453, 0.194957425)
-D020_ROTATION = (0.628736470, -0.628736470, 0.323559039, 0.323559039)
+# D-020 amendment: current co2_in_co1.txt supplied on 2026-10-04.
+D020_TRANSLATION = (0.0, -0.194899844, 0.080510987)
+D020_ROTATION = (0.457263310, 0.0, 0.0, 0.889331359)
 
 
 class _Backend:
@@ -62,7 +62,7 @@ def test_gripper_pose_composes_the_given_extrinsic():
     extrinsic = validated_extrinsic(D020_TRANSLATION, D020_ROTATION)
     position, orientation = gripper_pose(
         (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0), extrinsic)
-    assert position == pytest.approx((1.0, 1.919628547, 3.194957425))
+    assert position == pytest.approx((1.0, 1.805100156, 3.080510987))
     assert orientation == pytest.approx(extrinsic[1])
 
 

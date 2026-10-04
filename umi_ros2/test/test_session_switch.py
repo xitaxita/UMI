@@ -73,6 +73,43 @@ def test_switch_copies_only_raw_calibration(tmp_path):
     assert 'task' not in new.name
 
 
+def test_switch_copies_second_camera_raw_calibration(tmp_path):
+    """Carry both raw streams and their field mapping into the new session."""
+    old = create_online_session(tmp_path, image_streams=[
+        {'camera_id': 'wrist', 'image_field': 'wrist_image'},
+        {'camera_id': 'left', 'image_field': 'left_image'},
+    ])
+    source = _calibration(old, 1)
+    wrist = source / 'cameras' / 'wrist'
+    wrist.mkdir(parents=True)
+    for name in ('video.mp4', 'video.timing.json',
+                 'video.validation.json'):
+        (source / name).rename(wrist / name)
+    left = source / 'cameras' / 'left'
+    left.mkdir(parents=True)
+    (left / 'video.mp4').write_bytes(b'left video')
+    (left / 'video.timing.json').write_text('{"status": "complete"}')
+    (left / 'video.validation.json').write_text('{}')
+    metadata = read_session(old)
+    metadata['recordings'][0]['image_streams'] = [
+        {'camera_id': 'wrist', 'image_field': 'wrist_image',
+         'video_path': 'cameras/wrist/video.mp4'},
+        {'camera_id': 'left', 'image_field': 'left_image',
+         'video_path': 'cameras/left/video.mp4'},
+    ]
+    update_session(old, recordings=metadata['recordings'])
+
+    new, _ = switch_session(
+        old, tmp_path, image_streams=metadata['image_streams'])
+    copied = new / 'calibration' / 'calibration_001'
+    assert (copied / 'cameras/wrist/video.mp4').read_bytes() == b'mp4-1'
+    assert (copied / 'cameras/left/video.mp4').read_bytes() == b'left video'
+    assert not (copied / 'video.mp4').exists()
+    assert read_session(new)['image_streams'] == metadata['image_streams']
+    assert read_session(new)['recordings'][0]['image_streams'] == (
+        metadata['recordings'][0]['image_streams'])
+
+
 def test_switch_skips_failed_calibration_and_handles_none(tmp_path):
     """Only complete calibrations are copied; none at all is allowed."""
     old = create_online_session(tmp_path)
@@ -150,6 +187,32 @@ def test_calibration_order_is_numeric(tmp_path):
     assert latest_calibration(session).name == 'calibration_1000'
     assert [path.name for path in calibration_directories(session)] == [
         'calibration_999', 'calibration_1000']
+
+
+def test_copy_left_only_and_select_latest_per_camera(tmp_path):
+    """Left calibrations copy correctly and never replace wrist defaults."""
+    old = create_online_session(tmp_path)
+    wrist = _calibration(old, 1)
+    left = old / 'calibration' / 'calibration_002'
+    color = left / 'cameras' / 'left'
+    color.mkdir(parents=True)
+    (left / 'pose').mkdir()
+    (color / 'video.mp4').write_bytes(b'left')
+    (color / 'video.timing.json').write_text('{"camera_id": "left"}')
+    register_recording(old, left, 'calibration', image_streams=[{
+        'camera_id': 'left', 'image_field': 'left_image'}])
+    rejected = old / 'calibration' / 'calibration_003'
+    rejected.mkdir()
+    register_recording(old, rejected, 'calibration', status='rejected')
+    assert latest_calibration(old) == wrist
+    assert latest_calibration(old, 'left') == left
+    new, copied = switch_session(old, tmp_path, 'next')
+    assert [path.name for path in copied] == [wrist.name, left.name]
+    assert (new / 'calibration' / left.name / 'cameras/left/video.mp4'
+            ).read_bytes() == b'left'
+    assert read_session(new)['recordings'][1]['image_streams'][0][
+        'camera_id'] == 'left'
+    assert read_session(new)['temporal_calibrations'] == {}
 
 
 def test_latest_calibration_is_the_default_choice(tmp_path):

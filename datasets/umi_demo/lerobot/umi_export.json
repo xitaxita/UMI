@@ -1,0 +1,89 @@
+{
+  "schema_version": 2,
+  "format": "lerobot_v3",
+  "repo_id": "local/umi_demo",
+  "fps": 30,
+  "episode_count": 8,
+  "frame_count": 3653,
+  "source": "/home/xing/Documents/UMI/datasets/umi_demo.partial/processed/dataset_plan.json",
+  "tasks": [
+    "pick up the white cube and place it on the blue mark"
+  ],
+  "source_sessions": [
+    {
+      "session": "online_session_20260929_211408_383321",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "episode_count": 8
+    }
+  ],
+  "episodes": [
+    {
+      "episode_index": 0,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0001",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 423
+    },
+    {
+      "episode_index": 1,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0002",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 425
+    },
+    {
+      "episode_index": 2,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0003",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 534
+    },
+    {
+      "episode_index": 3,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0004",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 516
+    },
+    {
+      "episode_index": 4,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0005",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 466
+    },
+    {
+      "episode_index": 5,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0006",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 483
+    },
+    {
+      "episode_index": 6,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0007",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 431
+    },
+    {
+      "episode_index": 7,
+      "source_session": "online_session_20260929_211408_383321",
+      "source_episode": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321/episodes/episode_0008",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "frame_count": 375
+    }
+  ],
+  "state_layout": "x y z qx qy qz qw",
+  "coordinate_frame": "episode_start_pose",
+  "action_field": null
+}

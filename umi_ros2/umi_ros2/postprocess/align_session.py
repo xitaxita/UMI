@@ -11,7 +11,7 @@ import numpy as np
 from umi_ros2.common.ordering import natural_key
 from umi_ros2.postprocess.alignment import interpolate_poses
 from umi_ros2.postprocess.pose_io import read_vive_poses
-from umi_ros2.session.layout import read_session
+from umi_ros2.session.layout import read_session, resolve_video_path
 
 
 OFFSET_CONVENTION = (
@@ -42,7 +42,8 @@ def resolve_episodes(input_path):
     path = Path(input_path).expanduser().resolve()
     if not path.is_dir():
         raise ValueError(f'alignment input is not a directory: {path}')
-    if (path / 'video.mp4').is_file() and (path / 'pose').is_dir():
+    if ((path / 'pose').is_dir() or (path / 'video.mp4').is_file()
+            or (path / 'cameras').is_dir()):
         session = (
             path.parent.parent
             if (path.parent.parent / 'session.yaml').is_file() else None
@@ -98,8 +99,8 @@ def align_episode(
         episode, output_directory, offset_seconds, offset_source,
         maximum_pose_gap, minimum_valid_ratio, overwrite=False):
     """Align one episode and write normalized arrays, CSV, and report."""
-    video_path = episode / 'video.mp4'
-    timing_path = episode / 'video.timing.json'
+    video_path = resolve_video_path(episode)
+    timing_path = video_path.with_suffix('.timing.json')
     pose_path = episode / 'pose'
     for required in (video_path, timing_path, pose_path / 'metadata.yaml'):
         if not required.exists():
@@ -132,6 +133,9 @@ def align_episode(
         pose_right_index=result.right_indices,
         interpolation_alpha=result.alphas,
         pose_gap_seconds=result.gaps,
+        reference_position_xyz=positions[0],
+        reference_orientation_xyzw=orientations[0],
+        reference_pose_time_seconds=np.asarray(pose_times[0]),
     )
     _write_csv(
         output_directory / 'aligned_frames.csv', frame_indices, frame_pts,
@@ -145,6 +149,8 @@ def align_episode(
         'source_episode': str(episode),
         'source_video': str(video_path),
         'source_pose': str(pose_path),
+        'pose_reference_definition': 'first_recorded_tcp_pose_after_start',
+        'reference_pose_time_seconds': float(pose_times[0]),
         'offset_convention': OFFSET_CONVENTION,
         'video_to_pose_offset_seconds': offset_seconds,
         'offset_source': offset_source,

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "built_at": "2026-09-29T21:46:26.753+08:00",
+  "inputs": [
+    "recordings/online_session_20260929_211408_383321"
+  ],
+  "formats": {
+    "lerobot": "lerobot"
+  },
+  "tasks": [
+    "pick up the white cube and place it on the blue mark"
+  ],
+  "sessions": [
+    {
+      "session": "online_session_20260929_211408_383321",
+      "task": "pick up the white cube and place it on the blue mark",
+      "video_to_pose_offset_seconds": -0.09236435301542656,
+      "episode_count": 8,
+      "path": "/home/xing/Documents/UMI/recordings/online_session_20260929_211408_383321"
+    }
+  ],
+  "episode_count": 8,
+  "image_height": 1080,
+  "image_width": 1920,
+  "fps": 30,
+  "transform_contract_version": 1,
+  "processed": "processed"
+}

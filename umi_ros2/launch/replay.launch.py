@@ -23,6 +23,8 @@ def generate_launch_description():
     playback_rate = LaunchConfiguration('playback_rate')
     preview_width = LaunchConfiguration('preview_width')
     preview_height = LaunchConfiguration('preview_height')
+    use_calibration = LaunchConfiguration('use_calibration')
+    loop = LaunchConfiguration('loop')
     replay = Node(
         package='umi_ros2', executable='session_replay_node',
         name='umi_session_replay_node', output='screen',
@@ -34,6 +36,9 @@ def generate_launch_description():
                 preview_width, value_type=int),
             'preview_height': ParameterValue(
                 preview_height, value_type=int),
+            'use_calibration': ParameterValue(
+                use_calibration, value_type=bool),
+            'loop': ParameterValue(loop, value_type=bool),
         }],
     )
     return LaunchDescription([
@@ -53,6 +58,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'preview_height', default_value='720',
             description='RViz replay preview height in pixels',
+        ),
+        DeclareLaunchArgument(
+            'use_calibration', default_value='false',
+            description='Apply accepted per-camera time offsets to images',
+        ),
+        DeclareLaunchArgument(
+            'loop', default_value='false',
+            description='Repeat the selected replay for visual inspection',
         ),
         RegisterEventHandler(OnProcessExit(
             target_action=replay,
